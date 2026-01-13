@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X } from 'lucide-react';
+import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X, Search, Check } from 'lucide-react';
 
 // Default RSS Feed List
 const DEFAULT_RSS_LIST = [
@@ -18,7 +18,15 @@ type Episode = {
     pubDate: string;
 };
 
+type SearchResult = {
+    collectionName: string;
+    artistName: string;
+    feedUrl: string;
+    artworkUrl100: string;
+};
+
 type PlayerState = 'idle' | 'loading' | 'playing' | 'error';
+type SettingsTab = 'manage' | 'search';
 
 export default function Home() {
     const [rssList, setRssList] = useState<string[]>(DEFAULT_RSS_LIST);
@@ -27,7 +35,15 @@ export default function Home() {
     const [errorMessage, setErrorMessage] = useState<string>('');
     const [isRecent, setIsRecent] = useState<boolean>(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [settingsTab, setSettingsTab] = useState<SettingsTab>('search');
+
+    // Custom URL Input
     const [newUrl, setNewUrl] = useState('');
+
+    // Search
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
 
     const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -51,14 +67,12 @@ export default function Home() {
         localStorage.setItem('my_night_radio_rss', JSON.stringify(rssList));
     }, [rssList]);
 
-    const handleAddUrl = () => {
-        if (!newUrl.trim()) return;
-        if (rssList.includes(newUrl.trim())) {
-            setNewUrl('');
-            return;
-        }
-        const updatedList = [...rssList, newUrl.trim()];
-        setRssList(updatedList);
+    const handleAddUrl = (url: string) => {
+        if (!url) return;
+        const trimmed = url.trim();
+        if (rssList.includes(trimmed)) return;
+
+        setRssList([...rssList, trimmed]);
         setNewUrl('');
     };
 
@@ -70,6 +84,24 @@ export default function Home() {
     const handleResetDefault = () => {
         if (confirm('Are you sure you want to reset to default channels?')) {
             setRssList(DEFAULT_RSS_LIST);
+        }
+    };
+
+    const handleSearch = async () => {
+        if (!searchQuery.trim()) return;
+        setIsSearching(true);
+        setSearchResults([]);
+
+        try {
+            const res = await fetch(`/api/search?term=${encodeURIComponent(searchQuery)}`);
+            if (!res.ok) throw new Error('Search failed');
+            const data = await res.json();
+            setSearchResults(data.results || []);
+        } catch (e) {
+            console.error(e);
+            // alert('Failed to search'); 
+        } finally {
+            setIsSearching(false);
         }
     };
 
@@ -173,8 +205,10 @@ export default function Home() {
             {/* Settings Modal */}
             {isSettingsOpen && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="w-full max-w-lg bg-zinc-900/90 border border-zinc-800 rounded-2xl p-6 shadow-2xl m-4 flex flex-col max-h-[80vh]">
-                        <div className="flex items-center justify-between mb-6 flex-shrink-0">
+                    <div className="w-full max-w-lg bg-zinc-900/95 border border-zinc-800 rounded-2xl shadow-2xl m-4 flex flex-col max-h-[80vh] overflow-hidden">
+
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-6 pb-2 flex-shrink-0">
                             <h2 className="text-lg font-medium text-white flex items-center gap-2">
                                 <Settings className="w-5 h-5" /> Channels
                             </h2>
@@ -183,54 +217,134 @@ export default function Home() {
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-                            {/* Add New */}
-                            <div className="flex gap-2 mb-4 flex-shrink-0">
-                                <input
-                                    type="text"
-                                    value={newUrl}
-                                    onChange={(e) => setNewUrl(e.target.value)}
-                                    placeholder="Paste RSS URL..."
-                                    className="flex-1 bg-black/50 border border-zinc-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-zinc-500 text-zinc-300 transition-colors"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddUrl()}
-                                />
-                                <button
-                                    onClick={handleAddUrl}
-                                    disabled={!newUrl.trim()}
-                                    className="bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg disabled:opacity-50 transition-colors"
-                                >
-                                    <Plus className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            {/* List */}
-                            <div className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-2">
-                                {rssList.map((url, idx) => (
-                                    <div key={idx} className="group flex items-center justify-between p-3 rounded-lg bg-zinc-950/50 border border-zinc-800 hover:border-zinc-700 transition-colors">
-                                        <div className="truncate text-xs text-zinc-400 font-mono flex-1 pr-4">{url}</div>
-                                        <button
-                                            onClick={() => handleRemoveUrl(url)}
-                                            className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                ))}
-                                {rssList.length === 0 && (
-                                    <div className="text-center text-zinc-600 text-sm py-8 border border-dashed border-zinc-800 rounded-lg">
-                                        No channels added yet.
-                                    </div>
-                                )}
-                            </div>
+                        {/* Tabs */}
+                        <div className="flex px-6 gap-6 border-b border-zinc-800/50 mb-4 text-sm font-medium">
+                            <button
+                                onClick={() => setSettingsTab('search')}
+                                className={`pb-3 border-b-2 transition-colors ${settingsTab === 'search' ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                Search Podcast
+                            </button>
+                            <button
+                                onClick={() => setSettingsTab('manage')}
+                                className={`pb-3 border-b-2 transition-colors ${settingsTab === 'manage' ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                Manage URLs
+                            </button>
                         </div>
 
-                        <div className="mt-6 pt-4 border-t border-zinc-800 flex justify-end flex-shrink-0">
-                            <button
-                                onClick={handleResetDefault}
-                                className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors"
-                            >
-                                <RotateCcw className="w-3 h-3" /> Reset to Defaults
-                            </button>
+                        <div className="flex-1 overflow-hidden flex flex-col min-h-0 px-6 pb-6">
+
+                            {/* --- SEARCH TAB --- */}
+                            {settingsTab === 'search' && (
+                                <div className="flex flex-col h-full">
+                                    <div className="flex gap-2 mb-4 flex-shrink-0">
+                                        <div className="relative flex-1">
+                                            <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
+                                            <input
+                                                type="text"
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                placeholder="Search by keywords..."
+                                                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-zinc-500 text-zinc-200 placeholder:text-zinc-600 transition-colors"
+                                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={handleSearch}
+                                            disabled={!searchQuery.trim() || isSearching}
+                                            className="bg-zinc-100 hover:bg-zinc-300 text-black px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                        >
+                                            {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+                                        </button>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                                        {searchResults.map((result, idx) => {
+                                            const isAdded = rssList.includes(result.feedUrl);
+                                            return (
+                                                <div key={idx} className="flex gap-3 p-3 rounded-lg bg-zinc-800/20 border border-zinc-800/50 hover:bg-zinc-800/40 transition-colors">
+                                                    {result.artworkUrl100 && (
+                                                        <img src={result.artworkUrl100} alt={result.collectionName} className="w-12 h-12 rounded bg-zinc-800 object-cover flex-shrink-0" />
+                                                    )}
+                                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                        <h3 className="text-sm font-medium text-zinc-200 truncate">{result.collectionName}</h3>
+                                                        <p className="text-xs text-zinc-500 truncate">{result.artistName}</p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleAddUrl(result.feedUrl)}
+                                                        disabled={isAdded}
+                                                        className={`flex items-center justify-center w-8 h-8 rounded-full flex-shrink-0 transition-all ${isAdded ? 'bg-green-500/20 text-green-500' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'}`}
+                                                    >
+                                                        {isAdded ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                        {!isSearching && searchResults.length === 0 && searchQuery && (
+                                            <div className="text-center text-zinc-600 text-xs py-8">
+                                                No podcasts found. Try another keyword.
+                                            </div>
+                                        )}
+                                        {!isSearching && !searchQuery && (
+                                            <div className="text-center text-zinc-700 text-xs py-8">
+                                                Find your favorite podcasts easily.
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* --- MANAGE TAB --- */}
+                            {settingsTab === 'manage' && (
+                                <div className="flex flex-col h-full">
+                                    <div className="flex gap-2 mb-4 flex-shrink-0">
+                                        <input
+                                            type="text"
+                                            value={newUrl}
+                                            onChange={(e) => setNewUrl(e.target.value)}
+                                            placeholder="Paste RSS URL manually..."
+                                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-zinc-500 text-zinc-300 transition-colors placeholder:text-zinc-600"
+                                            onKeyDown={(e) => e.key === 'Enter' && handleAddUrl(newUrl)}
+                                        />
+                                        <button
+                                            onClick={() => handleAddUrl(newUrl)}
+                                            disabled={!newUrl.trim()}
+                                            className="bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg disabled:opacity-50 transition-colors"
+                                        >
+                                            <Plus className="w-5 h-5" />
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-2">
+                                        {rssList.map((url, idx) => (
+                                            <div key={idx} className="group flex items-center justify-between p-3 rounded-lg bg-zinc-950/30 border border-zinc-800/50 hover:border-zinc-700 transition-colors">
+                                                <div className="truncate text-xs text-zinc-400 font-mono flex-1 pr-4">{url}</div>
+                                                <button
+                                                    onClick={() => handleRemoveUrl(url)}
+                                                    className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {rssList.length === 0 && (
+                                            <div className="text-center text-zinc-600 text-sm py-8 border border-dashed border-zinc-800 rounded-lg">
+                                                No channels added yet.
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-end flex-shrink-0">
+                                        <button
+                                            onClick={handleResetDefault}
+                                            className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors"
+                                        >
+                                            <RotateCcw className="w-3 h-3" /> Reset to Defaults
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
