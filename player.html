@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Night Radio</title>
+    <style>
+        /* 夜用のダークテーマ */
+        body {
+            background-color: #000000;
+            color: #ccc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            user-select: none;
+            /* テキスト選択を防ぐ */
+        }
+
+        h1 {
+            margin-bottom: 30px;
+            font-weight: normal;
+            letter-spacing: 0.1em;
+            font-size: 1rem;
+            color: #666;
+        }
+
+        #playBtn {
+            background: transparent;
+            color: #fff;
+            border: 2px solid #444;
+            padding: 20px 40px;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        #playBtn:active {
+            transform: scale(0.95);
+            background: #222;
+        }
+
+        /* キー操作のヒント */
+        .hint {
+            margin-top: 15px;
+            font-size: 0.8rem;
+            color: #444;
+        }
+
+        #status {
+            margin-top: 25px;
+            font-size: 0.9rem;
+            color: #88ff88;
+            min-height: 1.2em;
+        }
+
+        #episodeTitle {
+            color: #fff;
+            margin-top: 15px;
+            font-size: 1.1rem;
+            text-align: center;
+            max-width: 85%;
+            line-height: 1.4;
+            display: none;
+        }
+
+        .date-info {
+            display: block;
+            margin-top: 8px;
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        #error-msg {
+            color: #ff5555;
+            margin-top: 20px;
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>MY NIGHT RADIO</h1>
+
+    <button id="playBtn" onclick="startRadio()">▶ START</button>
+    <div class="hint">Press Enter ↵</div>
+
+    <div id="status"></div>
+    <div id="episodeTitle"></div>
+    <div id="error-msg"></div>
+
+    <audio id="audioPlayer"></audio>
+
+    <script>
+        // ==========================================
+        // 【設定】ここに好きな番組のRSS URLを入れてください
+        // ==========================================
+        const rssList = [
+            "https://anchor.fm/s/100b7bfdc/podcast/rss",
+            "https://feeds.acast.com/public/shows/65a19d6398c1070016f3e0f8",
+            "https://anchor.fm/s/5828a764/podcast/rss",
+            "https://anchor.fm/s/c4dbbf54/podcast/rss",
+            // "ここに他のURLを追加（カンマを忘れずに）",
+        ];
+
+        // ▼ キーボードのEnterキーを監視する設定
+        document.addEventListener('keydown', function (event) {
+            const btn = document.getElementById('playBtn');
+            // Enterキーが押され、かつボタンが表示されている時だけ実行
+            if (event.key === 'Enter' && btn.style.display !== 'none') {
+                startRadio();
+            }
+        });
+
+        async function startRadio() {
+            const btn = document.getElementById('playBtn');
+            const hint = document.querySelector('.hint'); // ヒント文字
+            const status = document.getElementById('status');
+            const titleDisplay = document.getElementById('episodeTitle');
+            const errorMsg = document.getElementById('error-msg');
+            const player = document.getElementById('audioPlayer');
+
+            // 初期化
+            btn.style.display = 'none';
+            if (hint) hint.style.display = 'none'; // ヒントも消す
+            status.innerText = "Tuning in...";
+            errorMsg.innerText = "";
+            titleDisplay.style.display = "none";
+
+            try {
+                // 1. 番組をランダムに選ぶ
+                const randomRss = rssList[Math.floor(Math.random() * rssList.length)];
+
+                // 2. データを取得 (corsproxy.ioを使用)
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(randomRss)}`;
+                const response = await fetch(proxyUrl);
+
+                if (!response.ok) throw new Error(`通信エラー: ${response.status}`);
+                const str = await response.text();
+
+                // 3. 解析
+                const xmlDoc = new DOMParser().parseFromString(str, "text/xml");
+                const items = Array.from(xmlDoc.querySelectorAll("item"));
+
+                if (items.length === 0) throw new Error("エピソードが見つかりません");
+
+                // 4. 【直近1年フィルター】
+                const oneYearAgo = new Date();
+                oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+                const recentItems = items.filter(item => {
+                    const pubDateText = item.querySelector("pubDate")?.textContent;
+                    if (!pubDateText) return false;
+                    return new Date(pubDateText) >= oneYearAgo;
+                });
+
+                // 直近1年のがなければ、全期間から選ぶ
+                let targetList = recentItems;
+                let isRecent = true;
+                if (recentItems.length === 0) {
+                    targetList = items;
+                    isRecent = false;
+                }
+
+                // 5. エピソード決定
+                const randomItem = targetList[Math.floor(Math.random() * targetList.length)];
+
+                // データ抽出
+                const title = randomItem.querySelector("title").textContent;
+                const enclosure = randomItem.querySelector("enclosure");
+                const pubDateStr = randomItem.querySelector("pubDate").textContent;
+
+                if (!enclosure) throw new Error("音声ファイルが見つかりません（RSSを確認してください）");
+
+                const audioUrl = enclosure.getAttribute("url");
+                const dateDisplay = new Date(pubDateStr).toLocaleDateString();
+
+                // 6. 再生
+                player.src = audioUrl;
+                player.volume = 0.5;
+
+                await player.play();
+
+                // 表示更新
+                status.innerText = isRecent ? "Now Playing (Recent)" : "Now Playing (Archive)";
+                titleDisplay.innerHTML = `${title}<span class="date-info">(${dateDisplay})</span>`;
+                titleDisplay.style.display = "block";
+
+            } catch (e) {
+                console.error(e);
+                btn.style.display = 'block';
+                if (hint) hint.style.display = 'block';
+                status.innerText = "";
+                errorMsg.innerText = "【再生できませんでした】\n" + e.message + "\nEnterキーでもう一度試せます";
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radio Test (Proxy Fix)</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border-radius: 50px;
+            border: 2px solid #555;
+            background: #000;
+            color: #fff;
+        }
+
+        #status {
+            margin-top: 20px;
+            color: #88ff88;
+            text-align: center;
+        }
+
+        /* 成功したら緑色 */
+        #error-msg {
+            margin-top: 10px;
+            color: #ff5555;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="playBtn" onclick="startRadio()">▶ START RADIO</button>
+    <div id="status"></div>
+    <div id="error-msg"></div>
+    <audio id="audioPlayer"></audio>
+
+    <script>
+        const rssList = [
+            "https://feeds.rebuild.fm/rebuildfm"
+        ];
+
+        async function startRadio() {
+            const btn = document.getElementById('playBtn');
+            const status = document.getElementById('status');
+            const errorMsg = document.getElementById('error-msg');
+            const player = document.getElementById('audioPlayer');
+
+            btn.innerText = "Tuning in...";
+            status.innerText = "";
+            errorMsg.innerText = "";
+
+            try {
+                const randomRss = rssList[Math.floor(Math.random() * rssList.length)];
+
+                // 【変更点】より高速な corsproxy.io に変更しました
+                // このサーバーは JSON ではなく、生のテキストデータを直接返してくれます
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(randomRss)}`;
+
+                const response = await fetch(proxyUrl);
+
+                if (!response.ok) throw new Error(`通信エラー: ${response.status}`);
+
+                // 【変更点】JSONではなくテキストとして受け取ります
+                const str = await response.text();
+
+                if (!str) throw new Error("データが空でした");
+
+                // RSS解析
+                const xmlDoc = new DOMParser().parseFromString(str, "text/xml");
+                const items = xmlDoc.querySelectorAll("item");
+
+                if (items.length === 0) throw new Error("エピソードが見つかりません");
+
+                // ランダム再生
+                const randomItem = items[Math.floor(Math.random() * items.length)];
+                const enclosure = randomItem.querySelector("enclosure");
+
+                if (!enclosure) throw new Error("音声ファイルが見つかりません");
+
+                const audioUrl = enclosure.getAttribute("url");
+                const title = randomItem.querySelector("title").textContent;
+
+                player.src = audioUrl;
+                player.volume = 0.5;
+                await player.play();
+
+                btn.innerText = "Running...";
+                status.innerText = "♪ 再生中: " + title;
+
+            } catch (e) {
+                console.error(e);
+                btn.innerText = "▶ START RADIO";
+                errorMsg.innerText = "【エラー内容】\n" + e.message;
+            }
+        }
+    </script>
+</body>
+
+</html>
