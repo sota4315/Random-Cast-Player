@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Play, Loader2, Radio, Info } from 'lucide-react';
+import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X } from 'lucide-react';
 
-// RSS Feed List
-const RSS_LIST = [
+// Default RSS Feed List
+const DEFAULT_RSS_LIST = [
     "https://anchor.fm/s/100b7bfdc/podcast/rss",
     "https://feeds.acast.com/public/shows/65a19d6398c1070016f3e0f8",
     "https://anchor.fm/s/5828a764/podcast/rss",
@@ -21,26 +21,78 @@ type Episode = {
 type PlayerState = 'idle' | 'loading' | 'playing' | 'error';
 
 export default function Home() {
+    const [rssList, setRssList] = useState<string[]>(DEFAULT_RSS_LIST);
     const [playerState, setPlayerState] = useState<PlayerState>('idle');
     const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
     const [errorMessage, setErrorMessage] = useState<string>('');
     const [isRecent, setIsRecent] = useState<boolean>(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [newUrl, setNewUrl] = useState('');
+
     const audioRef = useRef<HTMLAudioElement>(null);
 
+    // Load from localStorage on mount
+    useEffect(() => {
+        const saved = localStorage.getItem('my_night_radio_rss');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    setRssList(parsed);
+                }
+            } catch (e) {
+                console.error("Failed to parse local storage", e);
+            }
+        }
+    }, []);
+
+    // Save to localStorage whenever list changes
+    useEffect(() => {
+        localStorage.setItem('my_night_radio_rss', JSON.stringify(rssList));
+    }, [rssList]);
+
+    const handleAddUrl = () => {
+        if (!newUrl.trim()) return;
+        if (rssList.includes(newUrl.trim())) {
+            setNewUrl('');
+            return;
+        }
+        const updatedList = [...rssList, newUrl.trim()];
+        setRssList(updatedList);
+        setNewUrl('');
+    };
+
+    const handleRemoveUrl = (urlToRemove: string) => {
+        const newList = rssList.filter(url => url !== urlToRemove);
+        setRssList(newList);
+    };
+
+    const handleResetDefault = () => {
+        if (confirm('Are you sure you want to reset to default channels?')) {
+            setRssList(DEFAULT_RSS_LIST);
+        }
+    };
+
     const startRadio = async () => {
+        if (rssList.length === 0) {
+            setErrorMessage('No channels configured. Please add RSS feeds in settings.');
+            setPlayerState('error');
+            return;
+        }
+
         setPlayerState('loading');
         setErrorMessage('');
 
         try {
             // 1. Pick a random RSS
-            const randomRss = RSS_LIST[Math.floor(Math.random() * RSS_LIST.length)];
+            const randomRss = rssList[Math.floor(Math.random() * rssList.length)];
 
-            // 2. Fetch via our API route to avoid CORS
+            // 2. Fetch via our API route
             const res = await fetch(`/api/rss?url=${encodeURIComponent(randomRss)}`);
             if (!res.ok) throw new Error('Failed to fetch RSS feed');
 
             const feed = await res.json();
-            const items = feed.items as any[]; // rss-parser returns items array
+            const items = feed.items as any[];
 
             if (!items || items.length === 0) {
                 throw new Error('No episodes found in feed');
@@ -57,7 +109,7 @@ export default function Home() {
             let targetList = recentItems;
             let recentFlag = true;
 
-            // Fallback to all items if no recent ones
+            // Fallback
             if (recentItems.length === 0) {
                 targetList = items;
                 recentFlag = false;
@@ -67,7 +119,6 @@ export default function Home() {
             const randomEpisode = targetList[Math.floor(Math.random() * targetList.length)];
 
             if (!randomEpisode.enclosure?.url) {
-                // Retry logic could go here, but for now just error
                 throw new Error('Episode audio source not found. Please try again.');
             }
 
@@ -82,8 +133,6 @@ export default function Home() {
             if (audioRef.current) {
                 audioRef.current.src = randomEpisode.enclosure.url;
                 audioRef.current.volume = 0.5;
-                // Wait for ready state before playing causing issues in some browsers?
-                // simple play() is usually enough after src change
                 await audioRef.current.play();
                 setPlayerState('playing');
             }
@@ -98,19 +147,97 @@ export default function Home() {
     // Keyboard shortcut
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Enter' && playerState !== 'loading' && playerState !== 'playing') {
+            if (e.key === 'Enter' && !isSettingsOpen && playerState !== 'loading' && playerState !== 'playing') {
                 startRadio();
+            }
+            if (e.key === 'Escape' && isSettingsOpen) {
+                setIsSettingsOpen(false);
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [playerState]);
+    }, [playerState, isSettingsOpen]);
 
     return (
-        <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-black text-gray-200 selection:bg-gray-800">
+        <main className="relative flex min-h-screen flex-col items-center justify-center p-6 bg-black text-gray-200 selection:bg-gray-800 overflow-hidden">
             <audio ref={audioRef} onEnded={() => setPlayerState('idle')} onError={() => setPlayerState('error')} />
 
-            <div className="max-w-md w-full flex flex-col items-center space-y-12 text-center">
+            {/* Settings Button */}
+            <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="absolute top-6 right-6 p-2 text-zinc-600 hover:text-zinc-300 transition-colors z-20 outline-none"
+            >
+                <Settings className="w-6 h-6" />
+            </button>
+
+            {/* Settings Modal */}
+            {isSettingsOpen && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="w-full max-w-lg bg-zinc-900/90 border border-zinc-800 rounded-2xl p-6 shadow-2xl m-4 flex flex-col max-h-[80vh]">
+                        <div className="flex items-center justify-between mb-6 flex-shrink-0">
+                            <h2 className="text-lg font-medium text-white flex items-center gap-2">
+                                <Settings className="w-5 h-5" /> Channels
+                            </h2>
+                            <button onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-white transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                            {/* Add New */}
+                            <div className="flex gap-2 mb-4 flex-shrink-0">
+                                <input
+                                    type="text"
+                                    value={newUrl}
+                                    onChange={(e) => setNewUrl(e.target.value)}
+                                    placeholder="Paste RSS URL..."
+                                    className="flex-1 bg-black/50 border border-zinc-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-zinc-500 text-zinc-300 transition-colors"
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddUrl()}
+                                />
+                                <button
+                                    onClick={handleAddUrl}
+                                    disabled={!newUrl.trim()}
+                                    className="bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg disabled:opacity-50 transition-colors"
+                                >
+                                    <Plus className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* List */}
+                            <div className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-2">
+                                {rssList.map((url, idx) => (
+                                    <div key={idx} className="group flex items-center justify-between p-3 rounded-lg bg-zinc-950/50 border border-zinc-800 hover:border-zinc-700 transition-colors">
+                                        <div className="truncate text-xs text-zinc-400 font-mono flex-1 pr-4">{url}</div>
+                                        <button
+                                            onClick={() => handleRemoveUrl(url)}
+                                            className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {rssList.length === 0 && (
+                                    <div className="text-center text-zinc-600 text-sm py-8 border border-dashed border-zinc-800 rounded-lg">
+                                        No channels added yet.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="mt-6 pt-4 border-t border-zinc-800 flex justify-end flex-shrink-0">
+                            <button
+                                onClick={handleResetDefault}
+                                className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors"
+                            >
+                                <RotateCcw className="w-3 h-3" /> Reset to Defaults
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Main Content */}
+            <div className={`max-w-md w-full flex flex-col items-center space-y-12 text-center z-10 transition-opacity duration-300 ${isSettingsOpen ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
 
                 {/* Header */}
                 <header className="space-y-2">
