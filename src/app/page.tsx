@@ -4,13 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X, Search, Check } from 'lucide-react';
 
 // Default RSS Feed List
-const DEFAULT_RSS_LIST = [
-    "https://anchor.fm/s/100b7bfdc/podcast/rss",
-    "https://feeds.acast.com/public/shows/65a19d6398c1070016f3e0f8",
-    "https://anchor.fm/s/5828a764/podcast/rss",
-    "https://anchor.fm/s/c4dbbf54/podcast/rss",
-    "https://feeds.rebuild.fm/rebuildfm"
-];
+// Default RSS Feed List (Empty by default now)
+const DEFAULT_RSS_LIST: string[] = [];
 
 type Episode = {
     title: string;
@@ -44,8 +39,37 @@ export default function Home() {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [recommendedPodcasts, setRecommendedPodcasts] = useState<SearchResult[]>([]);
 
     const audioRef = useRef<HTMLAudioElement>(null);
+
+    // Fetch Recommended Podcasts on mount
+    useEffect(() => {
+        const fetchRecommended = async () => {
+            const recommendations = ['Rebuild', 'COTEN RADIO', 'Off Topic', 'Donguri FM'];
+            const results: SearchResult[] = [];
+
+            try {
+                // Fetch in parallel
+                const promises = recommendations.map(term =>
+                    fetch(`/api/search?term=${encodeURIComponent(term)}`)
+                        .then(res => res.json())
+                        .then(data => data.results?.[0]) // Take the first result
+                );
+
+                const data = await Promise.all(promises);
+                data.forEach(item => {
+                    if (item) results.push(item);
+                });
+
+                setRecommendedPodcasts(results);
+            } catch (e) {
+                console.error("Failed to fetch recommendations", e);
+            }
+        };
+
+        fetchRecommended();
+    }, []);
 
     // Load from localStorage on mount
     useEffect(() => {
@@ -82,7 +106,7 @@ export default function Home() {
     };
 
     const handleResetDefault = () => {
-        if (confirm('Are you sure you want to reset to default channels?')) {
+        if (confirm('Are you sure you want to clear all channels?')) {
             setRssList(DEFAULT_RSS_LIST);
         }
     };
@@ -109,6 +133,7 @@ export default function Home() {
         if (rssList.length === 0) {
             setErrorMessage('No channels configured. Please add RSS feeds in settings.');
             setPlayerState('error');
+            setIsSettingsOpen(true); // Auto open settings
             return;
         }
 
@@ -260,6 +285,33 @@ export default function Home() {
                                     </div>
 
                                     <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                                        {/* Recommendations (Show when no search query) */}
+                                        {!searchQuery && recommendedPodcasts.length > 0 && (
+                                            <>
+                                                <div className="text-xs text-zinc-500 font-medium px-1 uppercase tracking-wider">Recommended for you</div>
+                                                {recommendedPodcasts.map((result, idx) => {
+                                                    const isAdded = rssList.includes(result.feedUrl);
+                                                    return (
+                                                        <div key={`rec-${idx}`} className="flex gap-3 p-3 rounded-lg bg-zinc-800/20 border border-zinc-800/50 hover:bg-zinc-800/40 transition-colors">
+                                                            {result.artworkUrl100 && (
+                                                                <img src={result.artworkUrl100} alt={result.collectionName} className="w-12 h-12 rounded bg-zinc-800 object-cover flex-shrink-0" />
+                                                            )}
+                                                            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                                <h3 className="text-sm font-medium text-zinc-200 truncate">{result.collectionName}</h3>
+                                                                <p className="text-xs text-zinc-500 truncate">{result.artistName}</p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => handleAddUrl(result.feedUrl)}
+                                                                disabled={isAdded}
+                                                                className={`flex items-center justify-center w-8 h-8 rounded-full flex-shrink-0 transition-all ${isAdded ? 'bg-green-500/20 text-green-500' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'}`}
+                                                            >
+                                                                {isAdded ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </>
+                                        )}
                                         {searchResults.map((result, idx) => {
                                             const isAdded = rssList.includes(result.feedUrl);
                                             return (
@@ -286,9 +338,9 @@ export default function Home() {
                                                 No podcasts found. Try another keyword.
                                             </div>
                                         )}
-                                        {!isSearching && !searchQuery && (
+                                        {!isSearching && !searchQuery && recommendedPodcasts.length === 0 && (
                                             <div className="text-center text-zinc-700 text-xs py-8">
-                                                Find your favorite podcasts easily.
+                                                Loading recommendations...
                                             </div>
                                         )}
                                     </div>
@@ -330,7 +382,8 @@ export default function Home() {
                                         ))}
                                         {rssList.length === 0 && (
                                             <div className="text-center text-zinc-600 text-sm py-8 border border-dashed border-zinc-800 rounded-lg">
-                                                No channels added yet.
+                                                No channels added yet.<br />
+                                                Add from Search or paste RSS.
                                             </div>
                                         )}
                                     </div>
@@ -340,7 +393,7 @@ export default function Home() {
                                             onClick={handleResetDefault}
                                             className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors"
                                         >
-                                            <RotateCcw className="w-3 h-3" /> Reset to Defaults
+                                            <RotateCcw className="w-3 h-3" /> Clear All
                                         </button>
                                     </div>
                                 </div>
