@@ -41,23 +41,27 @@ export async function POST(req: NextRequest) {
                     return;
                 }
 
+                console.log(`Linking detected. LINE: ${lineUserId}, App: ${appUserId}`);
+
                 const { error } = await supabase
                     .from('line_mappings')
                     .upsert({ line_user_id: lineUserId, app_user_id: appUserId });
 
                 if (error) {
-                    console.error(error);
+                    console.error('Supabase Error:', error);
                     await client.replyMessage({
                         replyToken: event.replyToken,
-                        messages: [{ type: 'text', text: 'Failed to link account.' }],
+                        messages: [{ type: 'text', text: 'Failed to link account. Database error.' }],
                     });
                 } else {
+                    console.log('Link success');
                     await client.replyMessage({
                         replyToken: event.replyToken,
                         messages: [{ type: 'text', text: `Successfully linked with User ID: ${appUserId}` }],
                     });
                 }
             } else {
+                console.log('Echo logic');
                 // Echo or help
                 await client.replyMessage({
                     replyToken: event.replyToken,
