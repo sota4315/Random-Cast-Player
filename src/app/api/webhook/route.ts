@@ -3,8 +3,8 @@ import * as line from '@line/bot-sdk';
 import { supabase } from '@/lib/supabase';
 
 const config = {
-    channelSecret: process.env.LINE_CHANNEL_SECRET!,
-    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN!,
+    channelSecret: process.env.LINE_CHANNEL_SECRET || 'dummy-secret',
+    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || 'dummy-token',
 };
 
 const client = new line.messagingApi.MessagingApiClient(config);
