@@ -556,7 +556,7 @@ export default function Home() {
                                     </h2>
                                     <p className="text-zinc-400 text-sm leading-relaxed">
                                         Enjoy a serendipitous listening experience.<br />
-                                        Register your favorite podcasts, and we'll play a random episode from the past year.
+                                        Register your favorite podcasts, and we&apos;ll play a random episode from the past year.
                                     </p>
                                 </div>
 
