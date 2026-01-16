@@ -17,7 +17,9 @@ export async function POST(req: NextRequest) {
     const signature = req.headers.get('x-line-signature') as string;
 
     // Debugging: Log loaded config (masked)
-    console.log(`Loaded Secret: ${config.channelSecret.slice(0, 4)}***${config.channelSecret.slice(-4)}`);
+    const secret = config.channelSecret || 'UNDEFINED';
+    console.log(`Loaded Secret: ${secret.slice(0, 4)}***${secret.slice(-4)}`);
+    console.log(`Access Token present: ${!!config.channelAccessToken}`);
     console.log(`Received Signature: ${signature}`);
 
     // Temporarily bypass validation but log the result
