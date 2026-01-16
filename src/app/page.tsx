@@ -4,8 +4,10 @@ import { useState, useRef, useEffect } from 'react';
 import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X, Search, Check } from 'lucide-react';
 
 // Default RSS Feed List
+import { supabase } from '@/lib/supabase';
+
 // Default RSS Feed List (Empty by default now)
-const DEFAULT_RSS_LIST: string[] = [];
+const DEFAULT_RSS_LIST: RssChannel[] = [];
 
 type Episode = {
     title: string;
@@ -20,11 +22,17 @@ type SearchResult = {
     artworkUrl100: string;
 };
 
+type RssChannel = {
+    id?: string; // Supabase ID, optional for optimistic updates
+    url: string;
+};
+
 type PlayerState = 'idle' | 'loading' | 'playing' | 'error';
 type SettingsTab = 'manage' | 'search';
 
 export default function Home() {
-    const [rssList, setRssList] = useState<string[]>(DEFAULT_RSS_LIST);
+    const [rssList, setRssList] = useState<RssChannel[]>(DEFAULT_RSS_LIST);
+    const [userId, setUserId] = useState<string>('');
     const [playerState, setPlayerState] = useState<PlayerState>('idle');
     const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
     const [errorMessage, setErrorMessage] = useState<string>('');
@@ -86,28 +94,99 @@ export default function Home() {
         }
     }, []);
 
-    // Save to localStorage whenever list changes
+    // Initialize User ID and Fetch Data from Supabase
     useEffect(() => {
-        localStorage.setItem('my_night_radio_rss', JSON.stringify(rssList));
-    }, [rssList]);
+        const initUser = async () => {
+            let configUserId = localStorage.getItem('mnr_user_id');
+            if (!configUserId) {
+                configUserId = crypto.randomUUID();
+                localStorage.setItem('mnr_user_id', configUserId);
+            }
+            setUserId(configUserId);
 
-    const handleAddUrl = (url: string) => {
+            // Fetch Channels
+            const { data, error } = await supabase
+                .from('channels')
+                .select('id, rss_url')
+                .eq('user_id', configUserId);
+
+            if (error) {
+                console.error('Error fetching channels:', error);
+            } else if (data) {
+                setRssList(data.map(d => ({ id: d.id, url: d.rss_url })));
+            }
+        };
+
+        initUser();
+    }, []);
+
+    // (LocalStorage sync removed in favor of Supabase)
+
+    const handleAddUrl = async (url: string) => {
         if (!url) return;
         const trimmed = url.trim();
-        if (rssList.includes(trimmed)) return;
 
-        setRssList([...rssList, trimmed]);
+        // Optimistic check
+        if (rssList.some(c => c.url === trimmed)) return;
+
+        // Optimistic Update
+        const tempId = crypto.randomUUID();
+        const newItem = { id: tempId, url: trimmed };
+        setRssList(prev => [...prev, newItem]);
         setNewUrl('');
+
+        // DB Insert
+        const { data, error } = await supabase
+            .from('channels')
+            .insert({ user_id: userId, rss_url: trimmed })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error adding channel:', error);
+            // Revert on error
+            setRssList(prev => prev.filter(c => c.id !== tempId));
+            alert('Failed to add channel. Please try again.');
+        } else if (data) {
+            // Update with real ID
+            setRssList(prev => prev.map(c => c.id === tempId ? { id: data.id, url: data.rss_url } : c));
+        }
     };
 
-    const handleRemoveUrl = (urlToRemove: string) => {
-        const newList = rssList.filter(url => url !== urlToRemove);
-        setRssList(newList);
+    const handleRemoveUrl = async (idToRemove: string) => {
+        // Optimistic Update
+        const oldList = [...rssList];
+        setRssList(prev => prev.filter(c => c.id !== idToRemove));
+
+        // DB Delete
+        const { error } = await supabase
+            .from('channels')
+            .delete()
+            .eq('id', idToRemove)
+            .eq('user_id', userId); // Security check
+
+        if (error) {
+            console.error('Error deleting channel:', error);
+            setRssList(oldList); // Revert
+        }
     };
 
-    const handleResetDefault = () => {
+    const handleResetDefault = async () => {
         if (confirm('Are you sure you want to clear all channels?')) {
-            setRssList(DEFAULT_RSS_LIST);
+            // Optimistic
+            const oldList = [...rssList];
+            setRssList([]);
+
+            // DB Delete All
+            const { error } = await supabase
+                .from('channels')
+                .delete()
+                .eq('user_id', userId);
+
+            if (error) {
+                console.error('Failed to clear channels', error);
+                setRssList(oldList);
+            }
         }
     };
 
@@ -145,7 +224,7 @@ export default function Home() {
             const randomRss = rssList[Math.floor(Math.random() * rssList.length)];
 
             // 2. Fetch via our API route
-            const res = await fetch(`/api/rss?url=${encodeURIComponent(randomRss)}`);
+            const res = await fetch(`/api/rss?url=${encodeURIComponent(randomRss.url)}`);
             if (!res.ok) throw new Error('Failed to fetch RSS feed');
 
             const feed = await res.json();
@@ -204,7 +283,8 @@ export default function Home() {
     // Keyboard shortcut
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Enter' && !isSettingsOpen && playerState !== 'loading' && playerState !== 'playing') {
+            if ((e.key === 'Enter' || e.key === ' ') && !isSettingsOpen && playerState !== 'loading' && playerState !== 'playing') {
+                e.preventDefault();
                 startRadio();
             }
             if (e.key === 'Escape' && isSettingsOpen) {
@@ -290,7 +370,7 @@ export default function Home() {
                                             <>
                                                 <div className="text-xs text-zinc-500 font-medium px-1 uppercase tracking-wider">Recommended for you</div>
                                                 {recommendedPodcasts.map((result, idx) => {
-                                                    const isAdded = rssList.includes(result.feedUrl);
+                                                    const isAdded = rssList.some(r => r.url === result.feedUrl);
                                                     return (
                                                         <div key={`rec-${idx}`} className="flex gap-3 p-3 rounded-lg bg-zinc-800/20 border border-zinc-800/50 hover:bg-zinc-800/40 transition-colors">
                                                             {result.artworkUrl100 && (
@@ -301,7 +381,7 @@ export default function Home() {
                                                                 <p className="text-xs text-zinc-500 truncate">{result.artistName}</p>
                                                             </div>
                                                             <button
-                                                                onClick={() => handleAddUrl(result.feedUrl)}
+                                                                onClick={() => !isAdded && handleAddUrl(result.feedUrl)}
                                                                 disabled={isAdded}
                                                                 className={`flex items-center justify-center w-8 h-8 rounded-full flex-shrink-0 transition-all ${isAdded ? 'bg-green-500/20 text-green-500' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'}`}
                                                             >
@@ -312,8 +392,9 @@ export default function Home() {
                                                 })}
                                             </>
                                         )}
+                                        {/* Search Results */}
                                         {searchResults.map((result, idx) => {
-                                            const isAdded = rssList.includes(result.feedUrl);
+                                            const isAdded = rssList.some(r => r.url === result.feedUrl);
                                             return (
                                                 <div key={idx} className="flex gap-3 p-3 rounded-lg bg-zinc-800/20 border border-zinc-800/50 hover:bg-zinc-800/40 transition-colors">
                                                     {result.artworkUrl100 && (
@@ -324,7 +405,7 @@ export default function Home() {
                                                         <p className="text-xs text-zinc-500 truncate">{result.artistName}</p>
                                                     </div>
                                                     <button
-                                                        onClick={() => handleAddUrl(result.feedUrl)}
+                                                        onClick={() => !isAdded && handleAddUrl(result.feedUrl)}
                                                         disabled={isAdded}
                                                         className={`flex items-center justify-center w-8 h-8 rounded-full flex-shrink-0 transition-all ${isAdded ? 'bg-green-500/20 text-green-500' : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'}`}
                                                     >
@@ -369,11 +450,11 @@ export default function Home() {
                                     </div>
 
                                     <div className="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-2">
-                                        {rssList.map((url, idx) => (
-                                            <div key={idx} className="group flex items-center justify-between p-3 rounded-lg bg-zinc-950/30 border border-zinc-800/50 hover:border-zinc-700 transition-colors">
-                                                <div className="truncate text-xs text-zinc-400 font-mono flex-1 pr-4">{url}</div>
+                                        {rssList.map((item, idx) => (
+                                            <div key={item.id || idx} className="group flex items-center justify-between p-3 rounded-lg bg-zinc-950/30 border border-zinc-800/50 hover:border-zinc-700 transition-colors">
+                                                <div className="truncate text-xs text-zinc-400 font-mono flex-1 pr-4">{item.url}</div>
                                                 <button
-                                                    onClick={() => handleRemoveUrl(url)}
+                                                    onClick={() => item.id && handleRemoveUrl(item.id)}
                                                     className="text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
@@ -388,7 +469,20 @@ export default function Home() {
                                         )}
                                     </div>
 
-                                    <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-end flex-shrink-0">
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-between items-center flex-shrink-0">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[10px] text-zinc-600 uppercase tracking-widest">Connect LINE</span>
+                                            <code
+                                                className="text-[10px] bg-zinc-900 px-2 py-1 rounded text-zinc-400 cursor-pointer hover:text-zinc-200 transition-colors"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(`CONNECT ${userId}`);
+                                                    alert('Command copied! Paste this to your LINE Bot.');
+                                                }}
+                                                title="Click to copy connection command"
+                                            >
+                                                {userId.slice(0, 8)}...
+                                            </code>
+                                        </div>
                                         <button
                                             onClick={handleResetDefault}
                                             className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors"
@@ -444,13 +538,53 @@ export default function Home() {
 
                     {playerState === 'idle' && (
                         <div className="absolute top-full left-0 right-0 mt-4 text-xs text-zinc-600 font-medium">
-                            Press Enter ↵
+                            Press Space or Enter ↵
                         </div>
                     )}
                 </div>
 
                 {/* Status Display */}
                 <div className="min-h-[120px] w-full flex flex-col items-center justify-center">
+                    {/* Tutorial for new users */}
+                    {rssList.length === 0 && !isSettingsOpen && playerState === 'idle' && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-40 backdrop-blur-sm animate-in fade-in duration-500">
+                            <div className="max-w-md px-8 text-center space-y-8">
+                                <div className="space-y-4">
+                                    <h2 className="text-3xl font-light tracking-wide text-white">
+                                        Welcome to <br />
+                                        <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-zinc-200 to-zinc-500">Random Cast</span>
+                                    </h2>
+                                    <p className="text-zinc-400 text-sm leading-relaxed">
+                                        Enjoy a serendipitous listening experience.<br />
+                                        Register your favorite podcasts, and we'll play a random episode from the past year.
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-4 text-left max-w-xs mx-auto text-sm text-zinc-300">
+                                    <div className="flex gap-4 items-center p-3 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-white">1</div>
+                                        <div>Search for your favorite podcasts</div>
+                                    </div>
+                                    <div className="flex gap-4 items-center p-3 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-white">2</div>
+                                        <div>Add them to your mix</div>
+                                    </div>
+                                    <div className="flex gap-4 items-center p-3 rounded-lg bg-zinc-900/50 border border-zinc-800">
+                                        <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-white">3</div>
+                                        <div>Press SPACE to start listening!</div>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={() => setIsSettingsOpen(true)}
+                                    className="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-zinc-200 transition-colors"
+                                >
+                                    Get Started
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {playerState === 'playing' && currentEpisode && (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
                             <div className="text-sm font-medium tracking-wider text-green-400/80 uppercase">
