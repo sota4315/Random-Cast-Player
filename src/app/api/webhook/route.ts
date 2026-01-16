@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 // const config = { ... }
 // const client = ...
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
     const config = {
         channelSecret: process.env.LINE_CHANNEL_SECRET!,
