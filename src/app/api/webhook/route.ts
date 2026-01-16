@@ -11,6 +11,8 @@ const client = new line.messagingApi.MessagingApiClient(config);
 
 export async function POST(req: NextRequest) {
     const body = await req.text();
+    const signature = req.headers.get('x-line-signature') as string;
+
     // Debugging: Log loaded config (masked)
     console.log(`Loaded Secret: ${config.channelSecret.slice(0, 4)}***${config.channelSecret.slice(-4)}`);
     console.log(`Received Signature: ${signature}`);
