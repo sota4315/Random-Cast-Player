@@ -69,15 +69,76 @@ export async function POST(req: NextRequest) {
                     });
                 }
             } else {
-                console.log('Echo logic');
-                // Echo or help
-                await client.replyMessage({
-                    replyToken: event.replyToken,
-                    messages: [{ type: 'text', text: 'Send "CONNECT <ID>" to link your account.' }],
-                });
+                // Parse schedule command
+                // Pattern: "月曜の8時にRebuild" or "日曜10時 ニュース"
+                const scheduleData = parseScheduleMessage(text);
+
+                if (scheduleData) {
+                    const { dayOfWeek, hour, keyword } = scheduleData;
+
+                    // Supabaseに保存
+                    const { error } = await supabase
+                        .from('schedules')
+                        .insert({
+                            line_user_id: lineUserId,
+                            keyword: keyword,
+                            day_of_week: dayOfWeek,
+                            hour: hour,
+                            minute: 0, // 今は0分固定
+                            is_active: true
+                        });
+
+                    if (error) {
+                        console.error('Schedule Save Error:', error);
+                        await client.replyMessage({
+                            replyToken: event.replyToken,
+                            messages: [{ type: 'text', text: '予約の保存に失敗しました。' }],
+                        });
+                    } else {
+                        const days = ['日', '月', '火', '水', '木', '金', '土'];
+                        await client.replyMessage({
+                            replyToken: event.replyToken,
+                            messages: [{ type: 'text', text: `予約しました！\n番組: ${keyword}\n時間: ${days[dayOfWeek]}曜日 ${hour}:00` }],
+                        });
+                    }
+                } else {
+                    // Help message
+                    await client.replyMessage({
+                        replyToken: event.replyToken,
+                        messages: [{
+                            type: 'text',
+                            text: '【使い方】\n\n1. 連携\n"CONNECT <ID>" を送信\n\n2. 予約\n"月曜の8時にRebuild" のように送信してください。\n(対応: 月〜日, 0-23時)'
+                        }],
+                    });
+                }
             }
+
+            // ... (rest of the file)
         })
     );
 
     return NextResponse.json({ message: 'OK' });
+}
+
+// Helper to parse message
+function parseScheduleMessage(text: string): { dayOfWeek: number, hour: number, keyword: string } | null {
+    // Regex: (Day)曜? (Hour)時 (Keyword)
+    // Matches: "月曜の8時にRebuild", "月曜8時 Rebuild", etc.
+    const regex = /([月火水木金土日])曜日?の?[\s　]*(\d{1,2})時に?[\s　]*(.+)/;
+    const match = text.match(regex);
+
+    if (!match) return null;
+
+    const dayChar = match[1];
+    const hourStr = match[2];
+    // Remove typical suffixes like "を再生して", "を予約"
+    let keyword = match[3].replace(/(を(再生|予約|かけて)?(して)?)$/, '').trim();
+
+    const days = ['日', '月', '火', '水', '木', '金', '土'];
+    const dayOfWeek = days.indexOf(dayChar);
+    const hour = parseInt(hourStr, 10);
+
+    if (dayOfWeek === -1 || isNaN(hour) || hour < 0 || hour > 23 || !keyword) return null;
+
+    return { dayOfWeek, hour, keyword };
 }
