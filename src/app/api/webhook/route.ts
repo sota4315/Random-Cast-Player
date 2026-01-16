@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as line from '@line/bot-sdk';
 import { supabase } from '@/lib/supabase';
 
-const config = {
-    channelSecret: process.env.LINE_CHANNEL_SECRET || 'dummy-secret',
-    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || 'dummy-token',
-};
-
-const client = new line.messagingApi.MessagingApiClient(config);
+// Config moved inside handler to ensure runtime env loading
+// const config = { ... }
+// const client = ...
 
 export async function POST(req: NextRequest) {
+    const config = {
+        channelSecret: process.env.LINE_CHANNEL_SECRET!,
+        channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN!,
+    };
+    const client = new line.messagingApi.MessagingApiClient(config);
+
     const body = await req.text();
     const signature = req.headers.get('x-line-signature') as string;
 
