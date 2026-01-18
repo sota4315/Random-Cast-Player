@@ -90,9 +90,10 @@ export async function POST(req: NextRequest) {
 
                     if (error) {
                         console.error('Schedule Save Error:', error);
+                        // Debug: Send actual error to LINE
                         await client.replyMessage({
                             replyToken: event.replyToken,
-                            messages: [{ type: 'text', text: '予約の保存に失敗しました。' }],
+                            messages: [{ type: 'text', text: `予約失敗エラー:\n${error.message}\nCode: ${error.code}` }],
                         });
                     } else {
                         const days = ['日', '月', '火', '水', '木', '金', '土'];
