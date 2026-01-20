@@ -8,6 +8,137 @@ import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
+// Helper to get app_user_id
+async function getAppUserId(lineUserId: string): Promise<string | null> {
+    const { data } = await supabase
+        .from('line_mappings')
+        .select('app_user_id')
+        .eq('line_user_id', lineUserId)
+        .single();
+    return data?.app_user_id || null;
+}
+
+// Handler for Search
+async function handleSearch(client: any, replyToken: string, term: string) {
+    try {
+        const res = await fetch(`https://itunes.apple.com/search?media=podcast&term=${encodeURIComponent(term)}&limit=5`);
+        const data = await res.json();
+
+        if (!data.results || data.results.length === 0) {
+            await client.replyMessage({
+                replyToken: replyToken,
+                messages: [{ type: 'text', text: '見つかりませんでした。別のキーワードで試してください。' }],
+            });
+            return;
+        }
+
+        // Create Flex Message Carousel
+        const bubbles = data.results.map((item: any) => ({
+            type: 'bubble',
+            hero: {
+                type: 'image',
+                url: item.artworkUrl600 || item.artworkUrl100,
+                size: 'full',
+                aspectRatio: '1:1',
+                aspectMode: 'cover',
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                    {
+                        type: 'text',
+                        text: item.collectionName,
+                        weight: 'bold',
+                        size: 'md',
+                        wrap: true,
+                    },
+                    {
+                        type: 'text',
+                        text: item.artistName,
+                        size: 'xs',
+                        color: '#888888',
+                        wrap: true,
+                        margin: 'sm',
+                    },
+                ],
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                    {
+                        type: 'button',
+                        style: 'primary',
+                        color: '#1DB446', // LINE Green
+                        action: {
+                            type: 'message',
+                            label: '追加',
+                            text: `番組追加 ${item.feedUrl} ${item.collectionName}`,
+                        },
+                    },
+                ],
+            },
+        }));
+
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{
+                type: 'flex',
+                altText: '検索結果',
+                contents: {
+                    type: 'carousel',
+                    contents: bubbles,
+                },
+            }],
+        });
+
+    } catch (e) {
+        console.error('Search Error:', e);
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '検索中にエラーが発生しました。' }],
+        });
+    }
+}
+
+// Handler for Adding Channel
+async function handleAddChannel(client: any, replyToken: string, lineUserId: string, url: string, title: string) {
+    const appUserId = await getAppUserId(lineUserId);
+    if (!appUserId) {
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: 'アカウントが連携されていません。"CONNECT <ID>" で連携してください。' }],
+        });
+        return;
+    }
+
+    // Check duplicates? (Optional but good UX)
+    // For simplicity, let Supabase handle or just insert (schedules logic handles dedup? No, channels logic usually allows check)
+    // In page.tsx we do optimistic check. Here let's just insert. If error, report it.
+
+    const { error } = await supabase
+        .from('channels')
+        .insert({
+            user_id: appUserId,
+            rss_url: url,
+        });
+
+    if (error) {
+        // 23505 is unique violation code if constraints exist
+        console.error('Add Channel Error:', error);
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '登録に失敗しました。（既に登録済みか、エラーが発生しました）' }],
+        });
+    } else {
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: `登録しました！\n${title}` }],
+        });
+    }
+}
+
 export async function POST(req: NextRequest) {
     const config = {
         channelSecret: process.env.LINE_CHANNEL_SECRET!,
@@ -38,7 +169,9 @@ export async function POST(req: NextRequest) {
 
             if (!lineUserId) return;
 
-            // Command: CONNECT <APP_USER_ID>
+            // Command Handlers
+
+            // 1. CONNECT
             if (text.startsWith('CONNECT ')) {
                 const appUserId = text.split(' ')[1];
                 if (!appUserId) {
@@ -68,12 +201,36 @@ export async function POST(req: NextRequest) {
                         messages: [{ type: 'text', text: `Successfully linked with User ID: ${appUserId}` }],
                     });
                 }
-            } else {
-                // Parse schedule command
-                // Pattern: "月曜の8時にRebuild" or "日曜10時 ニュース"
+            }
+            // 2. Search Command
+            else if (text.match(/^(検索|search)[\s　]+(.+)$/i)) {
+                const term = text.match(/^(検索|search)[\s　]+(.+)$/i)![2];
+                await handleSearch(client, event.replyToken, term);
+            }
+            // 3. Add Channel Command
+            else if (text.startsWith('番組追加 ')) {
+                // Format: "番組追加 <URL> <Title...>"
+                const parts = text.split(/[\s　]+/);
+                const url = parts[1];
+                if (!url) return;
+                const title = parts.slice(2).join(' ') || 'Unknown';
+                await handleAddChannel(client, event.replyToken, lineUserId, url, title);
+            }
+            // 4. Schedule Command (Legacy)
+            else {
                 const scheduleData = parseScheduleMessage(text);
 
                 if (scheduleData) {
+                    // Check Link
+                    const appUserId = await getAppUserId(lineUserId);
+                    if (!appUserId) {
+                        await client.replyMessage({
+                            replyToken: event.replyToken,
+                            messages: [{ type: 'text', text: '先に連携してください。\nSend "CONNECT <ID>"' }],
+                        });
+                        return;
+                    }
+
                     const { dayOfWeek, hour, keyword } = scheduleData;
 
                     // Supabaseに保存
@@ -107,7 +264,7 @@ export async function POST(req: NextRequest) {
                         replyToken: event.replyToken,
                         messages: [{
                             type: 'text',
-                            text: '【使い方】\n\n1. 連携\n"CONNECT <ID>" を送信\n\n2. 予約\n"月曜の8時にRebuild" のように送信してください。\n(対応: 月〜日, 0-23時)'
+                            text: '【使い方】\n\n🔍 検索:\n"検索 <キーワード>"\n\n📅 予約:\n"月曜の8時にRebuild"\n\n🔗 連携:\n"CONNECT <ID>"'
                         }],
                     });
                 }
