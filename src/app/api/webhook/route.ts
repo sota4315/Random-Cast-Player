@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as line from '@line/bot-sdk';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'; // Use Admin Client via alias
 
 // Config moved inside handler to ensure runtime env loading
 // const config = { ... }
