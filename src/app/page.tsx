@@ -5,7 +5,7 @@ import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X, Searc
 
 // Default RSS Feed List
 import { supabase } from '@/lib/supabase';
-import { initializeLiff } from '@/lib/liff';
+import { initializeLiff, sendConnectMessage } from '@/lib/liff';
 
 // Default RSS Feed List (Empty by default now)
 const DEFAULT_RSS_LIST: RssChannel[] = [];
@@ -149,34 +149,21 @@ export default function Home() {
         const initUser = async () => {
             let configUserId = localStorage.getItem('mnr_user_id');
 
-            // 1. Try LIFF Init & Auth
-            // If running in LINE App, this will return profile. If regular browser, returns null.
-            const liffProfile = await initializeLiff();
-
-            if (liffProfile?.lineUserId) {
-                try {
-                    const res = await fetch('/api/auth/link', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            lineUserId: liffProfile.lineUserId,
-                            currentAppUserId: configUserId
-                        })
-                    });
-                    const data = await res.json();
-                    if (data.appUserId) {
-                        configUserId = data.appUserId; // Update to synced ID
-                        localStorage.setItem('mnr_user_id', configUserId!);
-                    }
-                } catch (e) {
-                    console.error('LIFF Auth failed', e);
-                }
-            }
-
-            // 2. Fallback / Ensure ID exists
+            // 1. Ensure Local ID exists first (Generate if needed)
             if (!configUserId) {
                 configUserId = crypto.randomUUID();
                 localStorage.setItem('mnr_user_id', configUserId);
+            }
+
+            // 2. Try LIFF Init & Auto Link
+            const liffProfile = await initializeLiff();
+
+            if (liffProfile?.lineUserId && liffProfile.isInClient) {
+                const hasLinked = localStorage.getItem('mnr_liff_linked');
+                if (!hasLinked) {
+                    await sendConnectMessage(configUserId!);
+                    localStorage.setItem('mnr_liff_linked', 'true');
+                }
             }
 
             setUserId(configUserId!);

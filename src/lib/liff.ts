@@ -18,10 +18,30 @@ export async function initializeLiff() {
         return {
             lineUserId: profile.userId,
             displayName: profile.displayName,
-            pictureUrl: profile.pictureUrl
+            pictureUrl: profile.pictureUrl,
+            isInClient: liff.isInClient()
         };
     } catch (error) {
         console.error('LIFF Initialization failed:', error);
         return null;
+    }
+}
+
+export async function sendConnectMessage(appUserId: string) {
+    if (!liff.isInClient()) {
+        console.warn('LIFF is not running in LINE App. Cannot send message.');
+        return false;
+    }
+    try {
+        await liff.sendMessages([
+            {
+                type: 'text',
+                text: `CONNECT ${appUserId}`
+            }
+        ]);
+        return true;
+    } catch (error) {
+        console.error('LIFF Send Message failed:', error);
+        return false;
     }
 }
