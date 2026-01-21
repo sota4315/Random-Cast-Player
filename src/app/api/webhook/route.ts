@@ -113,10 +113,6 @@ async function handleAddChannel(client: any, replyToken: string, lineUserId: str
         return;
     }
 
-    // Check duplicates? (Optional but good UX)
-    // For simplicity, let Supabase handle or just insert (schedules logic handles dedup? No, channels logic usually allows check)
-    // In page.tsx we do optimistic check. Here let's just insert. If error, report it.
-
     const { error } = await supabase
         .from('channels')
         .insert({
@@ -148,9 +144,6 @@ export async function POST(req: NextRequest) {
 
     const body = await req.text();
     const signature = req.headers.get('x-line-signature') as string;
-
-    // Debugging: Log loaded config (masked)
-    // console.log(`Loaded Secret: ${config.channelSecret.slice(0, 4)}***${config.channelSecret.slice(-4)}`);
 
     if (!line.validateSignature(body, config.channelSecret, signature)) {
         return NextResponse.json({ message: 'Invalid signature' }, { status: 403 });
@@ -216,7 +209,18 @@ export async function POST(req: NextRequest) {
                 const title = parts.slice(2).join(' ') || 'Unknown';
                 await handleAddChannel(client, event.replyToken, lineUserId, url, title);
             }
-            // 4. Schedule Command (Legacy)
+            // 4. List Schedules
+            else if (text.match(/^(リスト|一覧|list|予約確認)$/i)) {
+                await handleListSchedules(client, event.replyToken, lineUserId);
+            }
+            // 5. Delete Schedule
+            else if (text.startsWith('予約削除 ')) {
+                const scheduleId = text.split(' ')[1];
+                if (scheduleId) {
+                    await handleDeleteSchedule(client, event.replyToken, lineUserId, scheduleId);
+                }
+            }
+            // 6. Schedule Command (Legacy)
             else {
                 const scheduleData = parseScheduleMessage(text);
 
@@ -264,17 +268,127 @@ export async function POST(req: NextRequest) {
                         replyToken: event.replyToken,
                         messages: [{
                             type: 'text',
-                            text: '【使い方】\n\n🔍 検索:\n"検索 <キーワード>"\n\n📅 予約:\n"月曜の8時にRebuild"\n\n🔗 連携:\n"CONNECT <ID>"'
+                            text: '【使い方】\n\n🔍 検索:\n"検索 <キーワード>"\n\n📅 予約:\n"月曜の8時にRebuild"\n\n🔗 連携:\n"CONNECT <ID>"\n\n📋 確認:\n"リスト"'
                         }],
                     });
                 }
             }
-
-            // ... (rest of the file)
         })
     );
 
     return NextResponse.json({ message: 'OK' });
+}
+
+// Handler for Listing Schedules
+async function handleListSchedules(client: any, replyToken: string, lineUserId: string) {
+    const { data: schedules, error } = await supabase
+        .from('schedules')
+        .select('*')
+        .eq('line_user_id', lineUserId)
+        .eq('is_active', true)
+        .order('day_of_week')
+        .order('hour');
+
+    if (error) {
+        console.error('List Schedules Error:', error);
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '予約の取得に失敗しました。' }],
+        });
+        return;
+    }
+
+    if (!schedules || schedules.length === 0) {
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '現在、予約はありません。' }],
+        });
+        return;
+    }
+
+    const days = ['日', '月', '火', '水', '木', '金', '土'];
+
+    // Flex Message Rows
+    const rows = schedules.map((item: any) => ({
+        type: 'box',
+        layout: 'horizontal',
+        margin: 'md',
+        contents: [
+            {
+                type: 'text',
+                text: `${days[item.day_of_week]}曜 ${item.hour}:00`,
+                size: 'sm',
+                color: '#555555',
+                flex: 3,
+            },
+            {
+                type: 'text',
+                text: item.keyword,
+                size: 'sm',
+                color: '#111111',
+                weight: 'bold',
+                flex: 4,
+                wrap: true,
+            },
+            {
+                type: 'button',
+                style: 'secondary',
+                height: 'sm',
+                action: {
+                    type: 'message',
+                    label: '削除',
+                    text: `予約削除 ${item.id}`,
+                },
+                flex: 2,
+            }
+        ],
+        alignItems: 'center',
+    }));
+
+    await client.replyMessage({
+        replyToken: replyToken,
+        messages: [{
+            type: 'flex',
+            altText: '予約一覧',
+            contents: {
+                type: 'bubble',
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [
+                        { type: 'text', text: '予約一覧', weight: 'bold', size: 'xl', color: '#1DB446' }
+                    ]
+                },
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: rows
+                }
+            }
+        }],
+    });
+}
+
+// Handler for Deleting Schedule
+async function handleDeleteSchedule(client: any, replyToken: string, lineUserId: string, scheduleId: string) {
+    const { error } = await supabase
+        .from('schedules')
+        .delete()
+        .eq('id', scheduleId)
+        .eq('line_user_id', lineUserId); // Safety check
+
+    if (error) {
+        console.error('Delete Schedule Error:', error);
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '削除に失敗しました。' }],
+        });
+    } else {
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '予約を削除しました。' }],
+        });
+    }
 }
 
 // Helper to parse message
