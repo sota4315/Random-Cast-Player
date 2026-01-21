@@ -97,6 +97,23 @@ async function handleSearch(client: any, replyToken: string, term: string) {
     }
 }
 
+// Handler for Follow Event
+async function handleFollow(client: any, replyToken: string) {
+    await client.replyMessage({
+        replyToken: replyToken,
+        messages: [
+            {
+                type: 'text',
+                text: '友だち追加ありがとうございます！🎉\nRandom Cast Player Botへようこそ。'
+            },
+            {
+                type: 'text',
+                text: 'まずはWebアプリと連携しましょう。\nWebアプリの[Settings] > [Connect LINE]に表示されているIDをコピーして、そのまま送信してください！'
+            }
+        ],
+    });
+}
+
 // Handler for Adding Channel
 async function handleAddChannel(client: any, replyToken: string, lineUserId: string, url: string, title: string) {
     const appUserId = await getAppUserId(lineUserId);
@@ -124,7 +141,13 @@ async function handleAddChannel(client: any, replyToken: string, lineUserId: str
     } else {
         await client.replyMessage({
             replyToken: replyToken,
-            messages: [{ type: 'text', text: `登録しました！\n${title}` }],
+            messages: [
+                { type: 'text', text: `「${title}」を登録しました！` },
+                {
+                    type: 'text',
+                    text: 'この番組をいつ自動再生しますか？\n\n「月曜8時に再生」\n「毎朝7時に予約」\n\nのように話しかけて教えてください。'
+                }
+            ],
         });
     }
 }
@@ -148,6 +171,14 @@ export async function POST(req: NextRequest) {
     await Promise.all(
         events.map(async (event) => {
             try {
+                // Handle Follow Event
+                if (event.type === 'follow') {
+                    if ('replyToken' in event) {
+                        await handleFollow(client, event.replyToken);
+                    }
+                    return;
+                }
+
                 if (event.type !== 'message' || event.message.type !== 'text') {
                     return;
                 }
@@ -160,9 +191,8 @@ export async function POST(req: NextRequest) {
                 // Command Handlers
 
                 // 1. CONNECT
-                if (text.startsWith('CONNECT ')) {
-                    // ... (省略なし) コマンドロジックは前のままだが、ここにtry-catchが入ることで安全になる
-                    const appUserId = text.split(' ')[1];
+                if (text.startsWith('CONNECT ') || text.match(/^[0-9a-f-]{36}$/i)) { // Allow raw UUID sending
+                    const appUserId = text.replace('CONNECT ', '').trim();
                     if (!appUserId) {
                         await client.replyMessage({
                             replyToken: event.replyToken,
@@ -179,12 +209,15 @@ export async function POST(req: NextRequest) {
                         console.error('Supabase Error:', error);
                         await client.replyMessage({
                             replyToken: event.replyToken,
-                            messages: [{ type: 'text', text: 'Failed to link account. Database error.' }],
+                            messages: [{ type: 'text', text: '連携に失敗しました。もう一度試してください。' }],
                         });
                     } else {
                         await client.replyMessage({
                             replyToken: event.replyToken,
-                            messages: [{ type: 'text', text: `Successfully linked with User ID: ${appUserId}` }],
+                            messages: [
+                                { type: 'text', text: '連携が完了しました！✨' },
+                                { type: 'text', text: '次に、どんな番組を登録しますか？\n番組名を入力して送信してください（例: Rebuild, ニュース）' }
+                            ],
                         });
                     }
                 }
