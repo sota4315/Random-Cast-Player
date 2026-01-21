@@ -108,7 +108,7 @@ async function handleFollow(client: any, replyToken: string) {
             },
             {
                 type: 'text',
-                text: 'まずはWebアプリと連携しましょう。\nWebアプリの[Settings] > [Connect LINE]に表示されているIDをコピーして、そのまま送信してください！'
+                text: 'まずはアカウントを連携しましょう。\n下のメニューからWebアプリを開いてください。\n\n「LINE連携を再実行」ボタンを押すと、自動的に連携メッセージが入力されるので、そのまま送信してください！'
             }
         ],
     });
