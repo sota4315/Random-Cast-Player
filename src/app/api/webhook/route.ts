@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as line from '@line/bot-sdk';
-import { supabaseAdmin as supabase } from '@/lib/supabase-admin'; // Use Admin Client via alias
-
-// Config moved inside handler to ensure runtime env loading
-// const config = { ... }
-// const client = ...
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +28,6 @@ async function handleSearch(client: any, replyToken: string, term: string) {
             return;
         }
 
-        // Create Flex Message Carousel
         const bubbles = data.results.map((item: any) => ({
             type: 'bubble',
             hero: {
@@ -70,7 +65,7 @@ async function handleSearch(client: any, replyToken: string, term: string) {
                     {
                         type: 'button',
                         style: 'primary',
-                        color: '#1DB446', // LINE Green
+                        color: '#1DB446',
                         action: {
                             type: 'message',
                             label: '追加',
@@ -121,7 +116,6 @@ async function handleAddChannel(client: any, replyToken: string, lineUserId: str
         });
 
     if (error) {
-        // 23505 is unique violation code if constraints exist
         console.error('Add Channel Error:', error);
         await client.replyMessage({
             replyToken: replyToken,
@@ -175,8 +169,6 @@ export async function POST(req: NextRequest) {
                     return;
                 }
 
-                console.log(`Linking detected. LINE: ${lineUserId}, App: ${appUserId}`);
-
                 const { error } = await supabase
                     .from('line_mappings')
                     .upsert({ line_user_id: lineUserId, app_user_id: appUserId });
@@ -188,7 +180,6 @@ export async function POST(req: NextRequest) {
                         messages: [{ type: 'text', text: 'Failed to link account. Database error.' }],
                     });
                 } else {
-                    console.log('Link success');
                     await client.replyMessage({
                         replyToken: event.replyToken,
                         messages: [{ type: 'text', text: `Successfully linked with User ID: ${appUserId}` }],
@@ -202,30 +193,39 @@ export async function POST(req: NextRequest) {
             }
             // 3. Add Channel Command
             else if (text.startsWith('番組追加 ')) {
-                // Format: "番組追加 <URL> <Title...>"
                 const parts = text.split(/[\s　]+/);
                 const url = parts[1];
                 if (!url) return;
                 const title = parts.slice(2).join(' ') || 'Unknown';
                 await handleAddChannel(client, event.replyToken, lineUserId, url, title);
             }
-            // 4. List Schedules
-            else if (text.match(/^(リスト|一覧|list|予約確認)$/i)) {
+            // 4. List Channels (New: Manage Channels)
+            else if (text.match(/^(リスト|一覧|list)$/i)) {
+                await handleListChannels(client, event.replyToken, lineUserId);
+            }
+            // 5. Delete Channel (New)
+            else if (text.startsWith('番組削除 ')) {
+                const channelId = text.split(' ')[1];
+                if (channelId) {
+                    await handleDeleteChannel(client, event.replyToken, lineUserId, channelId);
+                }
+            }
+            // 6. List Schedules (For Check Schedule)
+            else if (text.match(/^(予約確認|予約一覧)$/i)) {
                 await handleListSchedules(client, event.replyToken, lineUserId);
             }
-            // 5. Delete Schedule
+            // 7. Delete Schedule
             else if (text.startsWith('予約削除 ')) {
                 const scheduleId = text.split(' ')[1];
                 if (scheduleId) {
                     await handleDeleteSchedule(client, event.replyToken, lineUserId, scheduleId);
                 }
             }
-            // 6. Schedule Command (Legacy)
+            // 8. Schedule Command (Legacy)
             else {
                 const scheduleData = parseScheduleMessage(text);
 
                 if (scheduleData) {
-                    // Check Link
                     const appUserId = await getAppUserId(lineUserId);
                     if (!appUserId) {
                         await client.replyMessage({
@@ -237,7 +237,6 @@ export async function POST(req: NextRequest) {
 
                     const { dayOfWeek, hour, keyword } = scheduleData;
 
-                    // Supabaseに保存
                     const { error } = await supabase
                         .from('schedules')
                         .insert({
@@ -245,7 +244,7 @@ export async function POST(req: NextRequest) {
                             keyword: keyword,
                             day_of_week: dayOfWeek,
                             hour: hour,
-                            minute: 0, // 今は0分固定
+                            minute: 0,
                             is_active: true
                         });
 
@@ -268,7 +267,7 @@ export async function POST(req: NextRequest) {
                         replyToken: event.replyToken,
                         messages: [{
                             type: 'text',
-                            text: '【使い方】\n\n🔍 検索:\n"検索 <キーワード>"\n\n📅 予約:\n"月曜の8時にRebuild"\n\n🔗 連携:\n"CONNECT <ID>"\n\n📋 確認:\n"リスト"'
+                            text: '【使い方】\n\n🔍 検索:\n"検索 <キーワード>"\n\n📅 予約:\n"月曜の8時にRebuild"\n\n🔗 連携:\n"CONNECT <ID>"'
                         }],
                     });
                 }
@@ -277,6 +276,145 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json({ message: 'OK' });
+}
+
+// Handler for Listing Channels
+async function handleListChannels(client: any, replyToken: string, lineUserId: string) {
+    const appUserId = await getAppUserId(lineUserId);
+    if (!appUserId) {
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '連携されていません。"CONNECT <ID>" を送信してください。' }],
+        });
+        return;
+    }
+
+    const { data: channels, error } = await supabase
+        .from('channels')
+        .select('*')
+        .eq('user_id', appUserId);
+
+    if (error) {
+        console.error('List Channels Error:', error);
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: 'エラーが発生しました。' }],
+        });
+        return;
+    }
+
+    const rows = channels && channels.length > 0 ? channels.map((item: any) => ({
+        type: 'box',
+        layout: 'horizontal',
+        margin: 'md',
+        contents: [
+            {
+                type: 'text',
+                text: item.rss_url,
+                size: 'xs',
+                color: '#555555',
+                flex: 4,
+                wrap: true,
+                maxLines: 2,
+            },
+            {
+                type: 'button',
+                style: 'secondary',
+                height: 'sm',
+                action: {
+                    type: 'message',
+                    label: '削除',
+                    text: `番組削除 ${item.id}`,
+                },
+                flex: 1,
+            }
+        ],
+        alignItems: 'center',
+    })) : [
+        {
+            type: 'text',
+            text: '登録番組はありません。',
+            size: 'sm',
+            color: '#999999',
+            wrap: true,
+            align: 'center'
+        }
+    ];
+
+    await client.replyMessage({
+        replyToken: replyToken,
+        messages: [{
+            type: 'flex',
+            altText: '番組管理',
+            contents: {
+                type: 'bubble',
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'lg',
+                    backgroundColor: '#f8f8f8',
+                    contents: [
+                        { text: '番組管理', type: 'text', weight: 'bold', size: 'lg', color: '#111111' },
+                        {
+                            type: 'text',
+                            text: '登録済みの番組一覧',
+                            size: 'xs',
+                            color: '#888888',
+                            margin: 'sm'
+                        },
+                        // Pseudo Search Bar
+                        {
+                            type: 'box',
+                            layout: 'horizontal',
+                            margin: 'lg',
+                            backgroundColor: '#ffffff',
+                            cornerRadius: '20px',
+                            paddingAll: 'md',
+                            borderColor: '#dddddd',
+                            borderWidth: 'light',
+                            action: {
+                                type: 'uri',
+                                label: 'Search',
+                                uri: 'https://line.me/R/oaMessage/@' + (process.env.LINE_BOT_ID || 'dummy') + '/?検索%20'
+                            },
+                            contents: [
+                                { type: 'text', text: '🔍 番組を検索する...', color: '#cccccc', size: 'sm' }
+                            ]
+                        }
+                    ]
+                },
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: rows
+                }
+            }
+        }],
+    });
+}
+
+// Handler for Deleting Channel
+async function handleDeleteChannel(client: any, replyToken: string, lineUserId: string, channelId: string) {
+    const appUserId = await getAppUserId(lineUserId);
+    if (!appUserId) return;
+
+    const { error } = await supabase
+        .from('channels')
+        .delete()
+        .eq('id', channelId)
+        .eq('user_id', appUserId);
+
+    if (error) {
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '削除に失敗しました。' }],
+        });
+    } else {
+        await client.replyMessage({
+            replyToken: replyToken,
+            messages: [{ type: 'text', text: '番組を削除しました。' }],
+        });
+    }
 }
 
 // Handler for Listing Schedules
@@ -307,8 +445,6 @@ async function handleListSchedules(client: any, replyToken: string, lineUserId: 
     }
 
     const days = ['日', '月', '火', '水', '木', '金', '土'];
-
-    // Flex Message Rows
     const rows = schedules.map((item: any) => ({
         type: 'box',
         layout: 'horizontal',
@@ -375,7 +511,7 @@ async function handleDeleteSchedule(client: any, replyToken: string, lineUserId:
         .from('schedules')
         .delete()
         .eq('id', scheduleId)
-        .eq('line_user_id', lineUserId); // Safety check
+        .eq('line_user_id', lineUserId);
 
     if (error) {
         console.error('Delete Schedule Error:', error);
@@ -391,25 +527,16 @@ async function handleDeleteSchedule(client: any, replyToken: string, lineUserId:
     }
 }
 
-// Helper to parse message
 function parseScheduleMessage(text: string): { dayOfWeek: number, hour: number, keyword: string } | null {
-    // Regex: (Day)曜? (Hour)時 (Keyword)
-    // Matches: "月曜の8時にRebuild", "月曜8時 Rebuild", etc.
     const regex = /([月火水木金土日])曜日?の?[\s　]*(\d{1,2})時に?[\s　]*(.+)/;
     const match = text.match(regex);
-
     if (!match) return null;
-
     const dayChar = match[1];
     const hourStr = match[2];
-    // Remove typical suffixes like "を再生して", "を予約"
     let keyword = match[3].replace(/(を(再生|予約|かけて)?(して)?)$/, '').trim();
-
     const days = ['日', '月', '火', '水', '木', '金', '土'];
     const dayOfWeek = days.indexOf(dayChar);
     const hour = parseInt(hourStr, 10);
-
     if (dayOfWeek === -1 || isNaN(hour) || hour < 0 || hour > 23 || !keyword) return null;
-
     return { dayOfWeek, hour, keyword };
 }
