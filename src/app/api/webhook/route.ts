@@ -281,10 +281,13 @@ export async function POST(req: NextRequest) {
             } catch (err: any) {
                 console.error('Webhook Event Error:', err);
                 try {
-                    await client.replyMessage({
-                        replyToken: event.replyToken,
-                        messages: [{ type: 'text', text: 'エラーが発生しました。\n' + (err.message || '') }],
-                    });
+                    // Type guard for replyToken
+                    if ('replyToken' in event) {
+                        await client.replyMessage({
+                            replyToken: event.replyToken,
+                            messages: [{ type: 'text', text: 'エラーが発生しました。\n' + (err.message || '') }],
+                        });
+                    }
                 } catch (replyErr) {
                     console.error('Failed to reply error message:', replyErr);
                 }
