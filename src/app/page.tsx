@@ -5,6 +5,7 @@ import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X, Searc
 
 // Default RSS Feed List
 import { supabase } from '@/lib/supabase';
+import { initializeLiff } from '@/lib/liff';
 
 // Default RSS Feed List (Empty by default now)
 const DEFAULT_RSS_LIST: RssChannel[] = [];
@@ -147,18 +148,46 @@ export default function Home() {
     useEffect(() => {
         const initUser = async () => {
             let configUserId = localStorage.getItem('mnr_user_id');
+
+            // 1. Try LIFF Init & Auth
+            // If running in LINE App, this will return profile. If regular browser, returns null.
+            const liffProfile = await initializeLiff();
+
+            if (liffProfile?.lineUserId) {
+                try {
+                    const res = await fetch('/api/auth/link', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lineUserId: liffProfile.lineUserId,
+                            currentAppUserId: configUserId
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.appUserId) {
+                        configUserId = data.appUserId; // Update to synced ID
+                        localStorage.setItem('mnr_user_id', configUserId!);
+                    }
+                } catch (e) {
+                    console.error('LIFF Auth failed', e);
+                }
+            }
+
+            // 2. Fallback / Ensure ID exists
             if (!configUserId) {
                 configUserId = crypto.randomUUID();
                 localStorage.setItem('mnr_user_id', configUserId);
             }
-            setUserId(configUserId);
 
-            // Fetch Channels via API (bypass RLS)
+            setUserId(configUserId!);
+
+            // 3. Fetch Channels via API
             try {
                 const res = await fetch(`/api/channels?userId=${configUserId}`);
                 const data = await res.json();
                 if (Array.isArray(data)) {
-                    setRssList(data);
+                    // Update frontend model (API returns simplified struct, may need mapping if types differ, but seems compatible)
+                    setRssList(data.map((c: any) => ({ id: c.id, url: c.rss_url })));
                 }
             } catch (e) {
                 console.error('Error fetching channels:', e);
