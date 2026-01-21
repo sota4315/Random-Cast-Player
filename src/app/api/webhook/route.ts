@@ -389,9 +389,9 @@ async function handleListChannels(client: any, replyToken: string, lineUserId: s
                                 borderColor: '#dddddd',
                                 borderWidth: 'light',
                                 action: {
-                                    type: 'message',
+                                    type: 'uri',
                                     label: 'Search',
-                                    text: '検索' // Triggers the search prompt
+                                    uri: 'https://line.me/R/oaMessage/' + (process.env.LINE_BOT_ID || '@dummy') + '/?検索%20'
                                 },
                                 contents: [
                                     { type: 'text', text: '🔍 番組を検索する...', color: '#cccccc', size: 'sm' }
