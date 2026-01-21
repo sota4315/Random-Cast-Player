@@ -230,7 +230,7 @@ export async function POST(req: NextRequest) {
                         await handleDeleteSchedule(client, event.replyToken, lineUserId, scheduleId);
                     }
                 }
-                // 8. Schedule / Help
+                // 8. Schedule / Search Fallback
                 else {
                     const scheduleData = parseScheduleMessage(text);
                     if (scheduleData) {
@@ -242,6 +242,7 @@ export async function POST(req: NextRequest) {
                             });
                             return;
                         }
+
                         const { dayOfWeek, hour, keyword } = scheduleData;
                         const { error } = await supabase
                             .from('schedules')
@@ -268,14 +269,9 @@ export async function POST(req: NextRequest) {
                             });
                         }
                     } else {
-                        // Help message
-                        await client.replyMessage({
-                            replyToken: event.replyToken,
-                            messages: [{
-                                type: 'text',
-                                text: '【使い方】\n\n🔍 検索:\n"検索 <キーワード>"\n\n📅 予約:\n"月曜の8時にRebuild"\n\n🔗 連携:\n"CONNECT <ID>"'
-                            }],
-                        });
+                        // Fallback: Treat as Search Query
+                        // User likely sent a podcast name
+                        await handleSearch(client, event.replyToken, text);
                     }
                 }
             } catch (err: any) {
@@ -391,7 +387,8 @@ async function handleListChannels(client: any, replyToken: string, lineUserId: s
                                 action: {
                                     type: 'uri',
                                     label: 'Search',
-                                    uri: 'https://line.me/R/oaMessage/' + (process.env.LINE_BOT_ID || '@dummy') + '/?' + encodeURIComponent('検索 ')
+                                    // Insert a space to trigger input field open
+                                    uri: 'https://line.me/R/oaMessage/' + (process.env.LINE_BOT_ID || '@dummy') + '/?%20'
                                 },
                                 contents: [
                                     { type: 'text', text: '🔍 番組を検索する...', color: '#cccccc', size: 'sm' }
@@ -408,6 +405,8 @@ async function handleListChannels(client: any, replyToken: string, lineUserId: s
             }],
         });
     } catch (e: any) {
+        // ... (rest of the file remains, moving to the next chunk for the logic change)
+
         console.error('List Channels Error:', e);
         await client.replyMessage({
             replyToken: replyToken,
