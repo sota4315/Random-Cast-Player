@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X, Search, Check } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Play, Loader2, Radio, Info, Settings, Trash2, Plus, RotateCcw, X, Search, Check, Calendar } from 'lucide-react';
 
 // Default RSS Feed List
 import { supabase } from '@/lib/supabase';
@@ -27,8 +27,16 @@ type RssChannel = {
     url: string;
 };
 
+interface Schedule {
+    id: string;
+    keyword: string;
+    day_of_week: number;
+    hour: number;
+    is_active: boolean;
+}
+
 type PlayerState = 'idle' | 'loading' | 'playing' | 'error';
-type SettingsTab = 'manage' | 'search';
+type SettingsTab = 'manage' | 'search' | 'schedule';
 
 export default function Home() {
     const [rssList, setRssList] = useState<RssChannel[]>(DEFAULT_RSS_LIST);
@@ -40,6 +48,10 @@ export default function Home() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('search');
 
+    // Schedule State
+    const [schedules, setSchedules] = useState<Schedule[]>([]);
+    const [isLoadingSchedules, setIsLoadingSchedules] = useState(false);
+
     // Custom URL Input
     const [newUrl, setNewUrl] = useState('');
 
@@ -50,6 +62,43 @@ export default function Home() {
     const [recommendedPodcasts, setRecommendedPodcasts] = useState<SearchResult[]>([]);
 
     const audioRef = useRef<HTMLAudioElement>(null);
+
+    // Fetch Schedules
+    const fetchSchedules = useCallback(async () => {
+        if (!userId) return;
+        setIsLoadingSchedules(true);
+        try {
+            const res = await fetch(`/api/schedules?userId=${userId}`);
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setSchedules(data);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsLoadingSchedules(false);
+        }
+    }, [userId]);
+
+    const handleDeleteSchedule = async (id: string, keyword: string) => {
+        if (!confirm(`Delete schedule for "${keyword}"?`)) return;
+        try {
+            const res = await fetch(`/api/schedules?id=${id}&userId=${userId}`, { method: 'DELETE' });
+            if (res.ok) {
+                setSchedules(prev => prev.filter(s => s.id !== id));
+            } else {
+                alert('Failed to delete schedule');
+            }
+        } catch (e) {
+            alert('Error deleting schedule');
+        }
+    };
+
+    useEffect(() => {
+        if (settingsTab === 'schedule' && isSettingsOpen) {
+            fetchSchedules();
+        }
+    }, [settingsTab, isSettingsOpen, fetchSchedules]);
 
     // Fetch Recommended Podcasts on mount
     useEffect(() => {
@@ -336,6 +385,12 @@ export default function Home() {
                             >
                                 Manage URLs
                             </button>
+                            <button
+                                onClick={() => setSettingsTab('schedule')}
+                                className={`pb-3 border-b-2 transition-colors ${settingsTab === 'schedule' ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                Schedules
+                            </button>
                         </div>
 
                         <div className="flex-1 overflow-hidden flex flex-col min-h-0 px-6 pb-6">
@@ -489,6 +544,51 @@ export default function Home() {
                                         >
                                             <RotateCcw className="w-3 h-3" /> Clear All
                                         </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* --- SCHEDULE TAB --- */}
+                            {settingsTab === 'schedule' && (
+                                <div className="flex flex-col h-full">
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-2">
+                                        {isLoadingSchedules ? (
+                                            <div className="flex flex-col items-center justify-center h-48 text-zinc-500 gap-2">
+                                                <Loader2 className="w-6 h-6 animate-spin" />
+                                                <span className="text-xs">Loading schedules...</span>
+                                            </div>
+                                        ) : schedules.length === 0 ? (
+                                            <div className="text-center text-zinc-600 text-sm py-12 border border-dashed border-zinc-800 rounded-lg flex flex-col items-center gap-3">
+                                                <Calendar className="w-8 h-8 opacity-50" />
+                                                <span>
+                                                    No schedules found.<br />
+                                                    Add via LINE Bot.
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            schedules.map(item => (
+                                                <div key={item.id} className="flex items-center justify-between p-3 rounded-lg bg-zinc-950/30 border border-zinc-800/50 hover:bg-zinc-900/50 transition-colors">
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-sm font-medium text-zinc-200">{item.keyword}</span>
+                                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wide bg-zinc-900 px-1.5 py-0.5 rounded self-start border border-zinc-800">
+                                                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][item.day_of_week]} {item.hour}:00
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleDeleteSchedule(item.id, item.keyword)}
+                                                        className="text-zinc-600 hover:text-red-400 p-2 transition-colors rounded-full hover:bg-red-500/10"
+                                                        title="Delete Schedule"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 text-center">
+                                        <span className="text-[10px] text-zinc-600">
+                                            Manage your listening schedule via LINE Bot
+                                        </span>
                                     </div>
                                 </div>
                             )}
