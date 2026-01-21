@@ -391,7 +391,7 @@ async function handleListChannels(client: any, replyToken: string, lineUserId: s
                                 action: {
                                     type: 'uri',
                                     label: 'Search',
-                                    uri: 'https://line.me/R/oaMessage/' + (process.env.LINE_BOT_ID || '@dummy') + '/?検索%20'
+                                    uri: 'https://line.me/R/oaMessage/' + (process.env.LINE_BOT_ID || '@dummy') + '/?' + encodeURIComponent('検索 ')
                                 },
                                 contents: [
                                     { type: 'text', text: '🔍 番組を検索する...', color: '#cccccc', size: 'sm' }
