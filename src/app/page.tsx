@@ -153,16 +153,15 @@ export default function Home() {
             }
             setUserId(configUserId);
 
-            // Fetch Channels
-            const { data, error } = await supabase
-                .from('channels')
-                .select('id, rss_url')
-                .eq('user_id', configUserId);
-
-            if (error) {
-                console.error('Error fetching channels:', error);
-            } else if (data) {
-                setRssList(data.map(d => ({ id: d.id, url: d.rss_url })));
+            // Fetch Channels via API (bypass RLS)
+            try {
+                const res = await fetch(`/api/channels?userId=${configUserId}`);
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    setRssList(data);
+                }
+            } catch (e) {
+                console.error('Error fetching channels:', e);
             }
         };
 
@@ -178,27 +177,25 @@ export default function Home() {
         // Optimistic check
         if (rssList.some(c => c.url === trimmed)) return;
 
-        // Optimistic Update
-        const tempId = crypto.randomUUID();
-        const newItem = { id: tempId, url: trimmed };
-        setRssList(prev => [...prev, newItem]);
-        setNewUrl('');
+        // Add via API
+        try {
+            const res = await fetch('/api/channels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, url: trimmed })
+            });
+            const data = await res.json();
 
-        // DB Insert
-        const { data, error } = await supabase
-            .from('channels')
-            .insert({ user_id: userId, rss_url: trimmed })
-            .select()
-            .single();
-
-        if (error) {
-            console.error('Error adding channel:', error);
-            // Revert on error
-            setRssList(prev => prev.filter(c => c.id !== tempId));
-            alert('Failed to add channel. Please try again.');
-        } else if (data) {
-            // Update with real ID
-            setRssList(prev => prev.map(c => c.id === tempId ? { id: data.id, url: data.rss_url } : c));
+            if (res.ok) {
+                setRssList(prev => [...prev, { id: data.id, url: data.url }]);
+                setNewUrl('');
+                setSettingsTab('manage');
+            } else {
+                alert('Failed to add channel');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error adding channel');
         }
     };
 
@@ -207,16 +204,15 @@ export default function Home() {
         const oldList = [...rssList];
         setRssList(prev => prev.filter(c => c.id !== idToRemove));
 
-        // DB Delete
-        const { error } = await supabase
-            .from('channels')
-            .delete()
-            .eq('id', idToRemove)
-            .eq('user_id', userId); // Security check
-
-        if (error) {
-            console.error('Error deleting channel:', error);
+        try {
+            const res = await fetch(`/api/channels?id=${idToRemove}&userId=${userId}`, { method: 'DELETE' });
+            if (!res.ok) {
+                setRssList(oldList); // Revert
+                alert('Failed to remove channel');
+            }
+        } catch (e) {
             setRssList(oldList); // Revert
+            alert('Error removing channel');
         }
     };
 
