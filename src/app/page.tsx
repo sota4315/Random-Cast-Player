@@ -574,10 +574,10 @@ export default function Home() {
                                                 onClick={async () => {
                                                     const sent = await sendConnectMessage(userId);
                                                     if (sent) {
-                                                        alert('連携メッセージを送信しました！\nトーク画面に戻って確認してください。');
+                                                        // alert('LINEアプリに移動します。入力欄にメッセージが入っていますので、そのまま送信してください。');
                                                         localStorage.setItem('mnr_liff_linked', 'true');
                                                     } else {
-                                                        alert('送信に失敗しました。\n・LINEアプリ内から開いていますか？\n・LIFF設定で「chat_message.write」権限は許可されていますか？');
+                                                        alert('設定エラー: Bot IDが設定されていません。\n環境変数 NEXT_PUBLIC_LINE_BOT_BASIC_ID を設定してください。');
                                                     }
                                                 }}
                                                 className="w-full mt-2 py-2 bg-purple-600/80 text-white rounded-lg text-sm font-medium hover:bg-purple-600 transition"

@@ -28,20 +28,34 @@ export async function initializeLiff() {
 }
 
 export async function sendConnectMessage(appUserId: string) {
-    if (!liff.isInClient()) {
-        console.warn('LIFF is not running in LINE App. Cannot send message.');
+    // Fallback: If we can't send messages automatically properly due to permission issues,
+    // we redirect the user to the bot's chat with the message pre-filled.
+    // This requires the Bot's Basic ID (e.g. @123xyz).
+    // We will try to read it from env, or the user has to provide it.
+    // Ideally, this should be provided via environment variable NEXT_PUBLIC_LINE_BOT_BASIC_ID
+
+    // For now, let's assume we use the URL scheme method as a fallback or primary method.
+    // Since we don't have the Bot Basic ID in the env variables visible to client yet (likely),
+    // we need to ask the user to add it.
+
+    const botId = process.env.NEXT_PUBLIC_LINE_BOT_BASIC_ID;
+
+    if (!botId) {
+        console.error('NEXT_PUBLIC_LINE_BOT_BASIC_ID is not set');
         return false;
     }
-    try {
-        await liff.sendMessages([
-            {
-                type: 'text',
-                text: `CONNECT ${appUserId}`
-            }
-        ]);
-        return true;
-    } catch (error) {
-        console.error('LIFF Send Message failed:', error);
-        return false;
+
+    const message = `CONNECT ${appUserId}`;
+    const encodedMessage = encodeURIComponent(message);
+    const lineUrl = `https://line.me/R/oaMessage/${botId}/?${encodedMessage}`;
+
+    if (liff.isInClient()) {
+        await liff.openWindow({
+            url: lineUrl,
+            external: false
+        });
+    } else {
+        window.location.href = lineUrl;
     }
+    return true;
 }
