@@ -144,6 +144,15 @@ export default function Home() {
         }
     }, []);
 
+    // Handle Deep Linking (Auto-open settings)
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('open') === 'settings') {
+            setIsSettingsOpen(true);
+            setSettingsTab('schedule');
+        }
+    }, []);
+
     // Initialize User ID and Fetch Data from Supabase
     useEffect(() => {
         const initUser = async () => {

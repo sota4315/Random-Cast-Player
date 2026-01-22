@@ -100,7 +100,11 @@ async function handleSearch(client: any, replyToken: string, term: string) {
 // Handler for Follow Event
 async function handleFollow(client: any, replyToken: string) {
     const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-    const liffUrl = liffId ? `https://liff.line.me/${liffId}` : 'https://random-cast-player.vercel.app/';
+    // Add query param to open settings automatically
+    // NOTE: For LIFF, query params are passed to the endpoint URL.
+    const liffUrl = liffId
+        ? `https://liff.line.me/${liffId}?open=settings`
+        : 'https://random-cast-player.vercel.app/?open=settings';
 
     await client.replyMessage({
         replyToken: replyToken,
