@@ -35,6 +35,9 @@ const TRANSLATIONS = {
         add_url_btn: 'Add URL',
         footer_msg: 'Manage your listening schedule via LINE Bot',
         lang_label: 'Language',
+        time_to_listen: 'Time to listen!',
+        play_now: 'Play Now',
+        dismiss: 'Dismiss',
     },
     ja: {
         title: 'MY NIGHT RADIO',
@@ -60,6 +63,9 @@ const TRANSLATIONS = {
         add_url_btn: '追加',
         footer_msg: 'LINE Botから予約や番組追加ができます',
         lang_label: '言語設定',
+        time_to_listen: '時間になりました！',
+        play_now: '今すぐ再生',
+        dismiss: 'あとで',
     }
 };
 
@@ -111,6 +117,7 @@ export default function Home() {
     // Schedule State
     const [schedules, setSchedules] = useState<Schedule[]>([]);
     const [isLoadingSchedules, setIsLoadingSchedules] = useState(false);
+    const [alarmSchedule, setAlarmSchedule] = useState<Schedule | null>(null);
 
     // Custom URL Input
     const [newUrl, setNewUrl] = useState('');
@@ -463,7 +470,7 @@ export default function Home() {
             if (match) {
                 console.log('⏰ Autoplay triggered by schedule:', match);
                 lastAutoplayRef.current = key;
-                startRadio();
+                setAlarmSchedule(match);
             }
         };
 
@@ -897,6 +904,33 @@ export default function Home() {
             <footer className="fixed bottom-6 text-[10px] text-zinc-800 tracking-widest uppercase">
                 © 2026 Random Cast Player
             </footer>
+            {/* Alarm Overlay */}
+            {alarmSchedule && (
+                <div className="fixed top-0 left-0 right-0 z-50 bg-indigo-900/95 text-white p-6 shadow-2xl border-b-2 border-indigo-500 animate-in slide-in-from-top duration-500 flex flex-col items-center justify-center gap-4 h-[33vh]">
+                    <div className="text-sm font-medium opacity-80 uppercase tracking-widest">{t.time_to_listen}</div>
+                    <h2 className="text-2xl font-bold text-center leading-tight line-clamp-2">
+                        {alarmSchedule.keyword}
+                    </h2>
+                    <div className="flex gap-4 w-full max-w-sm mt-2">
+                        <button
+                            onClick={() => setAlarmSchedule(null)}
+                            className="flex-1 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-medium transition-colors"
+                        >
+                            {t.dismiss}
+                        </button>
+                        <button
+                            onClick={() => {
+                                setAlarmSchedule(null);
+                                startRadio();
+                            }}
+                            className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-400 rounded-xl font-bold shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            <Play className="w-5 h-5 fill-current" />
+                            {t.play_now}
+                        </button>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
