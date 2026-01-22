@@ -99,16 +99,48 @@ async function handleSearch(client: any, replyToken: string, term: string) {
 
 // Handler for Follow Event
 async function handleFollow(client: any, replyToken: string) {
+    const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+    const liffUrl = liffId ? `https://liff.line.me/${liffId}` : 'https://random-cast-player.vercel.app/';
+
     await client.replyMessage({
         replyToken: replyToken,
         messages: [
             {
-                type: 'text',
-                text: '友だち追加ありがとうございます！🎉\nRandom Cast Player Botへようこそ。'
-            },
-            {
-                type: 'text',
-                text: 'まずはアカウントを連携しましょう。\n下のメニューからWebアプリを開いてください。\n\n「LINE連携を再実行」ボタンを押すと、自動的に連携メッセージが入力されるので、そのまま送信してください！'
+                type: 'flex',
+                altText: 'アカウント連携',
+                contents: {
+                    type: 'bubble',
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: '友だち追加ありがとうございます！🎉', weight: 'bold', size: 'md' },
+                            { type: 'text', text: 'Random Cast Player Botへようこそ。', size: 'sm', margin: 'sm', color: '#666666' },
+                            { type: 'separator', margin: 'lg' },
+                            { type: 'text', text: 'まずはアカウントを連携しましょう。', margin: 'lg', weight: 'bold' },
+                            { type: 'text', text: '下のボタンからWebアプリを開き、設定画面の「LINE連携を再実行」ボタンを押してください。', margin: 'md', size: 'sm', wrap: true }
+                        ]
+                    },
+                    footer: {
+                        type: 'box',
+                        layout: 'vertical',
+                        spacing: 'sm',
+                        contents: [
+                            {
+                                type: 'button',
+                                style: 'primary',
+                                height: 'sm',
+                                action: {
+                                    type: 'uri',
+                                    label: 'Webアプリを開く',
+                                    uri: liffUrl
+                                },
+                                color: '#9333ea' // Purple-600
+                            }
+                        ],
+                        flex: 0
+                    }
+                }
             }
         ],
     });
