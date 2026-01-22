@@ -95,6 +95,7 @@ type SettingsTab = 'manage' | 'search' | 'schedule';
 export default function Home() {
     const [rssList, setRssList] = useState<RssChannel[]>(DEFAULT_RSS_LIST);
     const [userId, setUserId] = useState<string>('');
+    const [lineUserId, setLineUserId] = useState<string>('');
     const [language, setLanguage] = useState<'ja' | 'en'>('en'); // Default to English initially
 
     // Translation Helper
@@ -238,6 +239,9 @@ export default function Home() {
 
             // 2. Try LIFF Init & Auto Link
             const liffProfile = await initializeLiff();
+            if (liffProfile?.lineUserId) {
+                setLineUserId(liffProfile.lineUserId);
+            }
 
             if (liffProfile?.lineUserId && liffProfile.isInClient) {
                 const hasLinked = localStorage.getItem('mnr_liff_linked');
@@ -669,9 +673,24 @@ export default function Home() {
                                             </p>
                                             <button
                                                 onClick={async () => {
+                                                    // Trigger Guide Push Message
+                                                    if (lineUserId) {
+                                                        await fetch('/api/trigger-guide', {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({ lineUserId, lang: language })
+                                                        }).catch(err => console.error('Failed to trigger guide:', err));
+                                                    }
+
                                                     const sent = await sendConnectMessage(userId);
                                                     if (sent) {
-                                                        alert(t.reconnect_alert_success);
+                                                        const msg = lineUserId
+                                                            ? (language === 'ja'
+                                                                ? '詳細をBotから送信しました。\nトーク画面に戻り、入力欄のIDをそのまま送信してください！'
+                                                                : 'Please check the Bot message.\nSend the auto-filled ID in the chat!')
+                                                            : t.reconnect_alert_success;
+
+                                                        alert(msg);
                                                         localStorage.setItem('mnr_liff_linked', 'true');
                                                     } else {
                                                         alert(t.reconnect_alert_fail);
