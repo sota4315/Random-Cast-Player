@@ -480,6 +480,21 @@ export default function Home() {
         return () => clearInterval(timer);
     }, [schedules, playerState, rssList]);
 
+    // Autoplay from URL Logic
+    const hasAutoPlayedUrlRef = useRef(false);
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('autoplay') === 'true' && !hasAutoPlayedUrlRef.current && rssList.length > 0) {
+            hasAutoPlayedUrlRef.current = true;
+            console.log('🚀 Autoplay triggered by URL param');
+            startRadio();
+
+            // Clean URL
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+        }
+    }, [rssList]);
+
     return (
         <main className="relative flex min-h-screen flex-col items-center justify-center p-6 bg-black text-gray-200 selection:bg-gray-800 overflow-hidden">
             <audio ref={audioRef} onEnded={() => setPlayerState('idle')} onError={() => setPlayerState('error')} />
