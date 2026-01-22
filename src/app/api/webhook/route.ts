@@ -97,32 +97,109 @@ async function handleSearch(client: any, replyToken: string, term: string) {
     }
 }
 
-// Handler for Follow Event
-async function handleFollow(client: any, replyToken: string) {
-    const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-    // Add query param to open settings automatically
-    // NOTE: For LIFF, query params are passed to the endpoint URL.
-    const liffUrl = liffId
-        ? `https://liff.line.me/${liffId}?open=settings`
-        : 'https://random-cast-player.vercel.app/?open=settings';
+const MSG = {
+    ja: {
+        welcome: '友だち追加ありがとうございます！🎉',
+        desc: 'Random Cast Player Botへようこそ。',
+        link_title: 'まずはアカウントを連携しましょう。',
+        link_msg: '下のボタンからWebアプリを開き、設定画面の「LINE連携を再実行」ボタンを押してください。',
+        btn_label: 'Webアプリを開く'
+    },
+    en: {
+        welcome: 'Thanks for adding me! 🎉',
+        desc: 'Welcome to Random Cast Player Bot.',
+        link_title: 'Let\'s link your account.',
+        link_msg: 'Tap the button below to open the Web App, then tap "Reconnect LINE" in Settings.',
+        btn_label: 'Open Web App'
+    }
+};
 
+// Handler for Follow Event (Language Selection)
+async function handleFollow(client: any, replyToken: string) {
     await client.replyMessage({
         replyToken: replyToken,
         messages: [
             {
                 type: 'flex',
-                altText: 'アカウント連携',
+                altText: 'Select Language',
                 contents: {
                     type: 'bubble',
                     body: {
                         type: 'box',
                         layout: 'vertical',
                         contents: [
-                            { type: 'text', text: '友だち追加ありがとうございます！🎉', weight: 'bold', size: 'md' },
-                            { type: 'text', text: 'Random Cast Player Botへようこそ。', size: 'sm', margin: 'sm', color: '#666666' },
+                            { type: 'text', text: 'Select Language', weight: 'bold', size: 'lg', align: 'center' },
+                            { type: 'text', text: '言語を選択してください', size: 'xs', color: '#aaaaaa', align: 'center', margin: 'sm' },
+                            { type: 'separator', margin: 'md' },
+                            {
+                                type: 'box',
+                                layout: 'vertical',
+                                spacing: 'sm',
+                                margin: 'lg',
+                                contents: [
+                                    {
+                                        type: 'button',
+                                        style: 'primary',
+                                        action: { type: 'postback', label: '🇯🇵 日本語', data: 'action=set_lang&lang=ja' }
+                                    },
+                                    {
+                                        type: 'button',
+                                        style: 'secondary',
+                                        action: { type: 'postback', label: '🇺🇸 English', data: 'action=set_lang&lang=en' }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+        ]
+    });
+}
+
+// Handler for Postback
+async function handlePostback(client: any, replyToken: string, lineUserId: string, dataParams: string) {
+    const params = new URLSearchParams(dataParams);
+    const action = params.get('action');
+
+    if (action === 'set_lang') {
+        const lang = params.get('lang') || 'ja';
+
+        // Save Language Setting
+        // User must create 'line_users' table in Supabase
+        await supabase.from('line_users').upsert({ line_user_id: lineUserId, language: lang });
+
+        // Send Guide
+        await sendLinkGuide(client, replyToken, lang);
+    }
+}
+
+// Send Link Guide with specific language
+async function sendLinkGuide(client: any, replyToken: string, lang: string) {
+    const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+    const liffUrl = liffId
+        ? `https://liff.line.me/${liffId}?open=settings`
+        : 'https://random-cast-player.vercel.app/?open=settings';
+
+    const m = (MSG as any)[lang] || MSG.ja;
+
+    await client.replyMessage({
+        replyToken: replyToken,
+        messages: [
+            {
+                type: 'flex',
+                altText: m.link_title,
+                contents: {
+                    type: 'bubble',
+                    body: {
+                        type: 'box',
+                        layout: 'vertical',
+                        contents: [
+                            { type: 'text', text: m.welcome, weight: 'bold', size: 'md' },
+                            { type: 'text', text: m.desc, size: 'sm', margin: 'sm', color: '#666666' },
                             { type: 'separator', margin: 'lg' },
-                            { type: 'text', text: 'まずはアカウントを連携しましょう。', margin: 'lg', weight: 'bold' },
-                            { type: 'text', text: '下のボタンからWebアプリを開き、設定画面の「LINE連携を再実行」ボタンを押してください。', margin: 'md', size: 'sm', wrap: true }
+                            { type: 'text', text: m.link_title, margin: 'lg', weight: 'bold' },
+                            { type: 'text', text: m.link_msg, margin: 'md', size: 'sm', wrap: true }
                         ]
                     },
                     footer: {
@@ -136,10 +213,10 @@ async function handleFollow(client: any, replyToken: string) {
                                 height: 'sm',
                                 action: {
                                     type: 'uri',
-                                    label: 'Webアプリを開く',
+                                    label: m.btn_label,
                                     uri: liffUrl
                                 },
-                                color: '#9333ea' // Purple-600
+                                color: '#9333ea'
                             }
                         ],
                         flex: 0
@@ -211,6 +288,14 @@ export async function POST(req: NextRequest) {
                 if (event.type === 'follow') {
                     if ('replyToken' in event) {
                         await handleFollow(client, event.replyToken);
+                    }
+                    return;
+                }
+
+                // Handle Postback Event
+                if (event.type === 'postback') {
+                    if (event.source.userId && event.postback.data) {
+                        await handlePostback(client, event.replyToken, event.source.userId, event.postback.data);
                     }
                     return;
                 }
