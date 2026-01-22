@@ -441,6 +441,38 @@ export default function Home() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [playerState, isSettingsOpen]);
 
+    // Autoplay Logic
+    const lastAutoplayRef = useRef<string>('');
+
+    useEffect(() => {
+        if (schedules.length === 0) return;
+
+        const checkAutoplay = () => {
+            if (playerState === 'playing' || playerState === 'loading') return;
+
+            const now = new Date();
+            const day = now.getDay();
+            const hour = now.getHours();
+
+            // Key: YYYY-MM-DD-HH
+            const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${hour}`;
+
+            if (lastAutoplayRef.current === key) return;
+
+            const match = schedules.find(s => s.day_of_week === day && s.hour === hour && s.is_active);
+            if (match) {
+                console.log('⏰ Autoplay triggered by schedule:', match);
+                lastAutoplayRef.current = key;
+                startRadio();
+            }
+        };
+
+        const timer = setInterval(checkAutoplay, 15000); // Check every 15s
+        checkAutoplay(); // Initial check
+
+        return () => clearInterval(timer);
+    }, [schedules, playerState, rssList]);
+
     return (
         <main className="relative flex min-h-screen flex-col items-center justify-center p-6 bg-black text-gray-200 selection:bg-gray-800 overflow-hidden">
             <audio ref={audioRef} onEnded={() => setPlayerState('idle')} onError={() => setPlayerState('error')} />
