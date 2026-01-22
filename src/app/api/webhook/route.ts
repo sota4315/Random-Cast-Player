@@ -178,8 +178,8 @@ async function handlePostback(client: any, replyToken: string, lineUserId: strin
 async function sendLinkGuide(client: any, replyToken: string, lang: string) {
     const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
     const liffUrl = liffId
-        ? `https://liff.line.me/${liffId}?open=settings`
-        : 'https://random-cast-player.vercel.app/?open=settings';
+        ? `https://liff.line.me/${liffId}?open=settings&lang=${lang}`
+        : `https://random-cast-player.vercel.app/?open=settings&lang=${lang}`;
 
     const m = (MSG as any)[lang] || MSG.ja;
 

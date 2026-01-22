@@ -10,6 +10,59 @@ import { initializeLiff, sendConnectMessage } from '@/lib/liff';
 // Default RSS Feed List (Empty by default now)
 const DEFAULT_RSS_LIST: RssChannel[] = [];
 
+const TRANSLATIONS = {
+    en: {
+        title: 'MY NIGHT RADIO',
+        start_btn: 'Start Radio',
+        loading: 'Tuning...',
+        playing: 'Running...',
+        error: 'Failed to optimize...',
+        settings: 'Channels',
+        tab_search: 'Search Podcast',
+        tab_manage: 'Manage URLs',
+        tab_schedule: 'Schedules',
+        connection: 'Connection',
+        reconnect_btn: '🔗 Reconnect LINE',
+        reconnect_alert_success: 'Redirecting to LINE app...',
+        reconnect_alert_fail: 'Error: Bot ID check failed.',
+        schedules_list: 'Your Schedules',
+        no_schedules: 'No schedules found.',
+        search_placeholder: 'Search by keywords...',
+        search_btn: 'Search',
+        add_btn: 'Add',
+        added: 'Added',
+        manage_desc: 'Add custom RSS feeds directly.',
+        add_url_btn: 'Add URL',
+        footer_msg: 'Manage your listening schedule via LINE Bot',
+        lang_label: 'Language',
+    },
+    ja: {
+        title: 'MY NIGHT RADIO',
+        start_btn: 'ラジオを開始',
+        loading: '選局中...',
+        playing: '再生中...',
+        error: '最適化に失敗しました',
+        settings: 'チャンネル設定',
+        tab_search: '番組検索',
+        tab_manage: 'URL管理',
+        tab_schedule: '予約管理',
+        connection: 'LINE連携',
+        reconnect_btn: '🔗 LINE連携を再実行',
+        reconnect_alert_success: 'LINEアプリに移動します...',
+        reconnect_alert_fail: 'エラー: Bot IDが設定されていません。',
+        schedules_list: '登録済みの予約',
+        no_schedules: '予約はありません',
+        search_placeholder: 'キーワードで検索...',
+        search_btn: '検索',
+        add_btn: '追加',
+        added: '登録済',
+        manage_desc: 'RSSフィードのURLを直接追加できます',
+        add_url_btn: '追加',
+        footer_msg: 'LINE Botから予約や番組追加ができます',
+        lang_label: '言語設定',
+    }
+};
+
 type Episode = {
     title: string;
     enclosure: { url: string };
@@ -42,6 +95,11 @@ type SettingsTab = 'manage' | 'search' | 'schedule';
 export default function Home() {
     const [rssList, setRssList] = useState<RssChannel[]>(DEFAULT_RSS_LIST);
     const [userId, setUserId] = useState<string>('');
+    const [language, setLanguage] = useState<'ja' | 'en'>('en'); // Default to English initially
+
+    // Translation Helper
+    const t = TRANSLATIONS[language];
+
     const [playerState, setPlayerState] = useState<PlayerState>('idle');
     const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
     const [errorMessage, setErrorMessage] = useState<string>('');
@@ -144,9 +202,23 @@ export default function Home() {
         }
     }, []);
 
-    // Handle Deep Linking (Auto-open settings)
+    // Handle Deep Linking & Language Init
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
+
+        // Language Init
+        const langParam = params.get('lang');
+        if (langParam === 'ja' || langParam === 'en') {
+            setLanguage(langParam);
+            localStorage.setItem('mnr_lang', langParam);
+        } else {
+            const savedLang = localStorage.getItem('mnr_lang');
+            if (savedLang === 'ja' || savedLang === 'en') {
+                setLanguage(savedLang);
+            }
+        }
+
+        // Open Settings
         if (params.get('open') === 'settings') {
             setIsSettingsOpen(true);
             setSettingsTab('schedule');
@@ -385,11 +457,27 @@ export default function Home() {
                         {/* Header */}
                         <div className="flex items-center justify-between p-6 pb-2 flex-shrink-0">
                             <h2 className="text-lg font-medium text-white flex items-center gap-2">
-                                <Settings className="w-5 h-5" /> Channels
+                                <Settings className="w-5 h-5" /> {t.settings}
                             </h2>
-                            <button onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-white transition-colors">
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <div className="flex bg-zinc-800 rounded-lg p-0.5">
+                                    <button
+                                        onClick={() => { setLanguage('en'); localStorage.setItem('mnr_lang', 'en'); }}
+                                        className={`px-2 py-0.5 text-xs rounded-md transition-all ${language === 'en' ? 'bg-zinc-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-300'}`}
+                                    >
+                                        EN
+                                    </button>
+                                    <button
+                                        onClick={() => { setLanguage('ja'); localStorage.setItem('mnr_lang', 'ja'); }}
+                                        className={`px-2 py-0.5 text-xs rounded-md transition-all ${language === 'ja' ? 'bg-zinc-600 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-300'}`}
+                                    >
+                                        JA
+                                    </button>
+                                </div>
+                                <button onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-white transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Tabs */}
@@ -398,19 +486,19 @@ export default function Home() {
                                 onClick={() => setSettingsTab('search')}
                                 className={`pb-3 border-b-2 transition-colors ${settingsTab === 'search' ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
                             >
-                                Search Podcast
+                                {t.tab_search}
                             </button>
                             <button
                                 onClick={() => setSettingsTab('manage')}
                                 className={`pb-3 border-b-2 transition-colors ${settingsTab === 'manage' ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
                             >
-                                Manage URLs
+                                {t.tab_manage}
                             </button>
                             <button
                                 onClick={() => setSettingsTab('schedule')}
                                 className={`pb-3 border-b-2 transition-colors ${settingsTab === 'schedule' ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
                             >
-                                Schedules
+                                {t.tab_schedule}
                             </button>
                         </div>
 
@@ -426,7 +514,7 @@ export default function Home() {
                                                 type="text"
                                                 value={searchQuery}
                                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                                placeholder="Search by keywords..."
+                                                placeholder={t.search_placeholder}
                                                 className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-zinc-500 text-zinc-200 placeholder:text-zinc-600 transition-colors"
                                                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                             />
@@ -436,7 +524,7 @@ export default function Home() {
                                             disabled={!searchQuery.trim() || isSearching}
                                             className="bg-zinc-100 hover:bg-zinc-300 text-black px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                                         >
-                                            {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+                                            {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : t.search_btn}
                                         </button>
                                     </div>
 
@@ -574,7 +662,7 @@ export default function Home() {
                                 <div className="flex flex-col h-full space-y-6">
                                     {/* Connection Repair Section */}
                                     <div>
-                                        <h3 className="text-sm font-medium text-purple-400 mb-2">Connection</h3>
+                                        <h3 className="text-sm font-medium text-purple-400 mb-2">{t.connection}</h3>
                                         <div className="p-3 bg-white/5 rounded-lg">
                                             <p className="text-sm text-gray-300 mb-2">
                                                 User ID: {userId.slice(0, 8)}...
@@ -583,22 +671,22 @@ export default function Home() {
                                                 onClick={async () => {
                                                     const sent = await sendConnectMessage(userId);
                                                     if (sent) {
-                                                        // alert('LINEアプリに移動します。入力欄にメッセージが入っていますので、そのまま送信してください。');
+                                                        alert(t.reconnect_alert_success);
                                                         localStorage.setItem('mnr_liff_linked', 'true');
                                                     } else {
-                                                        alert('設定エラー: Bot IDが設定されていません。\n環境変数 NEXT_PUBLIC_LINE_BOT_BASIC_ID を設定してください。');
+                                                        alert(t.reconnect_alert_fail);
                                                     }
                                                 }}
                                                 className="w-full mt-2 py-2 bg-purple-600/80 text-white rounded-lg text-sm font-medium hover:bg-purple-600 transition"
                                             >
-                                                🔗 LINE連携を再実行
+                                                {t.reconnect_btn}
                                             </button>
                                         </div>
                                     </div>
 
                                     {/* Schedule List */}
                                     <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-2">
-                                        <h3 className="text-sm font-medium text-zinc-400 mb-2">Your Schedules</h3>
+                                        <h3 className="text-sm font-medium text-zinc-400 mb-2">{t.schedules_list}</h3>
                                         {isLoadingSchedules ? (
                                             <div className="flex flex-col items-center justify-center p-4 text-zinc-500 gap-2">
                                                 <Loader2 className="w-6 h-6 animate-spin" />
@@ -606,7 +694,7 @@ export default function Home() {
                                         ) : schedules.length === 0 ? (
                                             <div className="text-center text-zinc-600 text-sm py-8 border border-dashed border-zinc-800 rounded-lg flex flex-col items-center gap-3">
                                                 <Calendar className="w-8 h-8 opacity-50" />
-                                                <span>No schedules found.</span>
+                                                <span>{t.no_schedules}</span>
                                             </div>
                                         ) : (
                                             schedules.map(item => (
@@ -630,7 +718,7 @@ export default function Home() {
 
                                     <div className="mt-4 pt-4 border-t border-zinc-800 text-center">
                                         <span className="text-[10px] text-zinc-600">
-                                            Manage your listening schedule via LINE Bot
+                                            {t.footer_msg}
                                         </span>
                                     </div>
                                 </div>
@@ -649,7 +737,7 @@ export default function Home() {
                         <Radio className="w-6 h-6 text-gray-400" />
                     </div>
                     <h1 className="text-xl tracking-[0.2em] text-gray-500 font-light">
-                        MY NIGHT RADIO
+                        {t.title}
                     </h1>
                 </header>
 
@@ -657,7 +745,7 @@ export default function Home() {
                 <div className="relative group">
                     {playerState === 'playing' ? (
                         <div className="px-8 py-6 rounded-full border border-green-500/30 bg-green-900/10 text-green-400 animate-pulse">
-                            Running...
+                            {t.playing}
                         </div>
                     ) : (
                         <button
@@ -668,12 +756,12 @@ export default function Home() {
                             {playerState === 'loading' ? (
                                 <span className="flex items-center gap-3">
                                     <Loader2 className="w-5 h-5 animate-spin" />
-                                    Tuning...
+                                    {t.loading}
                                 </span>
                             ) : (
                                 <span className="flex items-center gap-2">
                                     <Play className="w-5 h-5 fill-current" />
-                                    START
+                                    {t.start_btn}
                                 </span>
                             )}
                         </button>
