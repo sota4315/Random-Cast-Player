@@ -721,14 +721,14 @@ function parseScheduleMessage(text: string): { dayOfWeek: number, hour: number, 
 // AI Helper
 async function determineIntentOrChat(text: string): Promise<{ type: 'search' | 'talk', content: string }> {
     if (!process.env.GEMINI_API_KEY) {
-        console.warn('GEMINI_API_KEY is missing. Falling back to search.');
-        return { type: 'search', content: text };
+        console.warn('GEMINI_API_KEY is missing.');
+        return { type: 'talk', content: '⚠️ Developer: GEMINI_API_KEY is not set in Vercel environment variables.' };
     }
 
     try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // Use gemini-1.5-flash for speed/cost, or gemini-pro if flash not available
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // Using "gemini-1.5-pro" for better accuracy.
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
         const prompt = `
         You are a friendly Radio DJ bot ("Random Cast Bot").
@@ -768,6 +768,6 @@ async function determineIntentOrChat(text: string): Promise<{ type: 'search' | '
         }
     } catch (e) {
         console.error('Gemini Error:', e);
-        return { type: 'search', content: text };
+        return { type: 'talk', content: '⚠️ System: AI Generation failed. Please try again later.' };
     }
 }
