@@ -727,8 +727,8 @@ async function determineIntentOrChat(text: string): Promise<{ type: 'search' | '
 
     try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // Using "gemini-1.5-pro" for better accuracy.
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+        // Reverting to flash for better availability, trusting the new prompt fixes the greeting issue.
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         const prompt = `
         You are a friendly Radio DJ bot ("Random Cast Bot").
@@ -766,8 +766,9 @@ async function determineIntentOrChat(text: string): Promise<{ type: 'search' | '
             // Fallback: treat as talk
             return { type: 'talk', content: response };
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error('Gemini Error:', e);
-        return { type: 'talk', content: '⚠️ System: AI Generation failed. Please try again later.' };
+        // Expose error detail for debugging
+        return { type: 'talk', content: `⚠️ System Error: ${e.message || String(e)}` };
     }
 }
