@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as line from '@line/bot-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
@@ -423,9 +424,17 @@ export async function POST(req: NextRequest) {
                             });
                         }
                     } else {
-                        // Fallback: Treat as Search Query
-                        // User likely sent a podcast name
-                        await handleSearch(client, event.replyToken, text);
+                        // Fallback: AI Determine
+                        const intent = await determineIntentOrChat(text);
+                        if (intent.type === 'search') {
+                            await handleSearch(client, event.replyToken, intent.content);
+                        } else {
+                            // Chat Response
+                            await client.replyMessage({
+                                replyToken: event.replyToken,
+                                messages: [{ type: 'text', text: intent.content }]
+                            });
+                        }
                     }
                 }
             } catch (err: any) {
@@ -707,4 +716,49 @@ function parseScheduleMessage(text: string): { dayOfWeek: number, hour: number, 
     const hour = parseInt(hourStr, 10);
     if (dayOfWeek === -1 || isNaN(hour) || hour < 0 || hour > 23 || !keyword) return null;
     return { dayOfWeek, hour, keyword };
+}
+
+// AI Helper
+async function determineIntentOrChat(text: string): Promise<{ type: 'search' | 'talk', content: string }> {
+    if (!process.env.GEMINI_API_KEY) {
+        // Fallback if no API key
+        return { type: 'search', content: text };
+    }
+
+    try {
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        // Use gemini-1.5-flash for speed/cost, or gemini-pro if flash not available
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        const prompt = `
+        You are a friendly Radio DJ bot ("Random Cast Bot").
+        User input: "${text}"
+
+        Analyze the user's intent.
+        1. If the user wants to search for a podcast (e.g., "News", "Rebuild", "History", or just a noun that looks like a title), output: SEARCH: <keyword>
+        2. If the user is just chatting (e.g., "Hello", "How are you?", "Recommend something?", "Good morning"), output: TALK: <your response as a cool Radio DJ (in the same language as user)>
+        
+        Rules:
+        - If users ask for recommendations without specific keywords, treat it as TALK and recommend checking out the Web App.
+        - Keep the chat response short (1-2 sentences).
+        - If input is Japanese, response MUST be in Japanese.
+        
+        Response format: "SEARCH: ..." or "TALK: ..."
+        `;
+
+        const result = await model.generateContent(prompt);
+        const response = result.response.text();
+
+        if (response.startsWith('SEARCH:')) {
+            return { type: 'search', content: response.replace('SEARCH:', '').trim() };
+        } else if (response.startsWith('TALK:')) {
+            return { type: 'talk', content: response.replace('TALK:', '').trim() };
+        } else {
+            // Fallback: treat as talk
+            return { type: 'talk', content: response };
+        }
+    } catch (e) {
+        console.error('Gemini Error:', e);
+        return { type: 'search', content: text };
+    }
 }
