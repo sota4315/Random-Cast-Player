@@ -721,7 +721,7 @@ function parseScheduleMessage(text: string): { dayOfWeek: number, hour: number, 
 // AI Helper
 async function determineIntentOrChat(text: string): Promise<{ type: 'search' | 'talk', content: string }> {
     if (!process.env.GEMINI_API_KEY) {
-        // Fallback if no API key
+        console.warn('GEMINI_API_KEY is missing. Falling back to search.');
         return { type: 'search', content: text };
     }
 
@@ -734,16 +734,25 @@ async function determineIntentOrChat(text: string): Promise<{ type: 'search' | '
         You are a friendly Radio DJ bot ("Random Cast Bot").
         User input: "${text}"
 
-        Analyze the user's intent.
-        1. If the user wants to search for a podcast (e.g., "News", "Rebuild", "History", or just a noun that looks like a title), output: SEARCH: <keyword>
-        2. If the user is just chatting (e.g., "Hello", "How are you?", "Recommend something?", "Good morning"), output: TALK: <your response as a cool Radio DJ (in the same language as user)>
+        Task: Classify intent and generate response.
         
-        Rules:
-        - If users ask for recommendations without specific keywords, treat it as TALK and recommend checking out the Web App.
-        - Keep the chat response short (1-2 sentences).
-        - If input is Japanese, response MUST be in Japanese.
+        Intents:
+        1. **SEARCH**: User explicitly wants to find a podcast channel.
+           - Examples: "Find news", "Search for Rebuild", "History podcasts", "Tech".
+           - Output: SEARCH: <keyword>
         
-        Response format: "SEARCH: ..." or "TALK: ..."
+        2. **TALK**: User is chatting, greeting, or asking generic questions.
+           - Examples: "Hello", "こんにちは", "Good morning", "Recommend something", "暇", "疲れた".
+           - UNLESS the user asks to "Search" specifically, treat ambiguous nouns as TALK if they look like conversation.
+           - "こんにちは" (Hello) is ALWAYS TALK. Do NOT search for it.
+           - Output: TALK: <DJ-style response>
+
+        Constraints:
+        - Response must be in the same language as the input.
+        - Keep talk responses concise (max 2 sentences).
+        - Be energetic and friendly!
+
+        Output Format: "SEARCH: ..." or "TALK: ..."
         `;
 
         const result = await model.generateContent(prompt);
