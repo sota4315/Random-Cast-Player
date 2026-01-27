@@ -785,27 +785,31 @@ async function determineIntentOrChat(text: string): Promise<AIIntent> {
         const currentMinute = jstTime.getMinutes();
         const currentDate = jstTime.getDate();
         const currentMonth = jstTime.getMonth() + 1;
+        const dayNames = ['日曜日(Sun)', '月曜日(Mon)', '火曜日(Tue)', '水曜日(Wed)', '木曜日(Thu)', '金曜日(Fri)', '土曜日(Sat)'];
+        const tomorrowDay = (currentDay + 1) % 7;
 
-        const prompt = `You are a Radio DJ bot. Classify and respond with ONLY the format. No explanations.
+        const prompt = `You are a scheduler bot. Extract schedule info. ONE LINE ONLY.
 
 User: "${text}"
-Now: ${currentMonth}/${currentDate} (day_of_week=${currentDay}, 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat), ${currentHour}:${String(currentMinute).padStart(2, '0')} JST
+TODAY: ${currentMonth}/${currentDate} ${dayNames[currentDay]}, day_of_week=${currentDay}, ${currentHour}:${String(currentMinute).padStart(2, '0')} JST
+TOMORROW: day_of_week=${tomorrowDay}
 
 RULES:
-1. SCHEDULE - Time-based playback request (X時Y分, X:Y, 朝, 夜, 再生, かけて)
-   - Calculate correct day_of_week from date if given (e.g., "1/27" → check what day it is)
-   - Support minutes: "12時45分" → hour=12, minute=45
-   - If only hour given, minute=0
-   - If time already passed today, use tomorrow
-   - Output: SCHEDULE:{"day_of_week":N,"hour":H,"minute":M,"keyword":"ランダム","message":"確認"}
+1. SCHEDULE - extract time for playback
+   - "今日" (today) → day_of_week=${currentDay}
+   - "明日" (tomorrow) → day_of_week=${tomorrowDay}
+   - If no date specified and time has passed → use tomorrow (day_of_week=${tomorrowDay})
+   - If no date specified and time not passed → use today (day_of_week=${currentDay})
+   - Extract hour and minute from text
+   - Output: SCHEDULE:{"day_of_week":N,"hour":H,"minute":M,"keyword":"ランダム","message":"確認メッセージ"}
 
-2. SEARCH - Find podcast (検索, 探して, find + keyword)
+2. SEARCH - podcast search request
    - Output: SEARCH:keyword
 
-3. TALK - Chat/greeting
+3. TALK - greeting/chat
    - Output: TALK:response
 
-ONE LINE ONLY. NO MARKDOWN.`;
+NO EXPLANATIONS. ONE LINE ONLY.`;
 
         const result = await model.generateContent(prompt);
         const response = result.response.text().trim();
