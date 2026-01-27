@@ -426,10 +426,50 @@ export async function POST(req: NextRequest) {
                     } else {
                         // Fallback: AI Determine
                         const intent = await determineIntentOrChat(text);
-                        if (intent.type === 'search') {
+
+                        if (intent.type === 'schedule') {
+                            // Handle AI-detected schedule intent
+                            const appUserId = await getAppUserId(lineUserId);
+                            if (!appUserId) {
+                                await client.replyMessage({
+                                    replyToken: event.replyToken,
+                                    messages: [{ type: 'text', text: '先に連携してください。\nSend "CONNECT <ID>"' }],
+                                });
+                                return;
+                            }
+
+                            const { dayOfWeek, hour, keyword, message } = intent;
+                            const { error } = await supabase
+                                .from('schedules')
+                                .insert({
+                                    line_user_id: lineUserId,
+                                    keyword: keyword,
+                                    day_of_week: dayOfWeek,
+                                    hour: hour,
+                                    minute: 0,
+                                    is_active: true
+                                });
+
+                            if (error) {
+                                console.error('Schedule Save Error:', error);
+                                await client.replyMessage({
+                                    replyToken: event.replyToken,
+                                    messages: [{ type: 'text', text: '予約の保存に失敗しました。' }],
+                                });
+                            } else {
+                                const days = ['日', '月', '火', '水', '木', '金', '土'];
+                                await client.replyMessage({
+                                    replyToken: event.replyToken,
+                                    messages: [{
+                                        type: 'text',
+                                        text: `${message}\n\n📻 番組: ${keyword}\n🗓 時間: ${days[dayOfWeek]}曜日 ${hour}:00`
+                                    }],
+                                });
+                            }
+                        } else if (intent.type === 'search') {
                             await handleSearch(client, event.replyToken, intent.content);
                         } else {
-                            // Chat Response
+                            // Chat Response (type === 'talk')
                             await client.replyMessage({
                                 replyToken: event.replyToken,
                                 messages: [{ type: 'text', text: intent.content }]
@@ -718,8 +758,14 @@ function parseScheduleMessage(text: string): { dayOfWeek: number, hour: number, 
     return { dayOfWeek, hour, keyword };
 }
 
-// AI Helper
-async function determineIntentOrChat(text: string): Promise<{ type: 'search' | 'talk', content: string }> {
+// AI Intent Type
+type AIIntent =
+    | { type: 'search', content: string }
+    | { type: 'talk', content: string }
+    | { type: 'schedule', dayOfWeek: number, hour: number, keyword: string, message: string };
+
+// AI Helper - Now supports SCHEDULE intent
+async function determineIntentOrChat(text: string): Promise<AIIntent> {
     if (!process.env.GEMINI_API_KEY) {
         console.warn('GEMINI_API_KEY is missing.');
         return { type: 'talk', content: '⚠️ Developer: GEMINI_API_KEY is not set in Vercel environment variables.' };
@@ -727,36 +773,80 @@ async function determineIntentOrChat(text: string): Promise<{ type: 'search' | '
 
     try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // Reverting to flash for better availability, trusting the new prompt fixes the greeting issue.
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+        // Get current day for context
+        const now = new Date();
+        const currentDay = now.getDay(); // 0=Sun, 1=Mon, ...
+        const currentHour = now.getHours();
 
         const prompt = `
-        You are a friendly Radio DJ bot ("Random Cast Bot").
-        User input: "${text}"
+You are a friendly Radio DJ bot ("Random Cast Bot").
+User input: "${text}"
+Current time context: Day ${currentDay} (0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat), Hour ${currentHour}
 
-        Task: Classify intent and generate response.
-        
-        Intents:
-        1. **SEARCH**: User explicitly wants to find a podcast channel.
-           - Examples: "Find news", "Search for Rebuild", "History podcasts", "Tech".
-           - Output: SEARCH: <keyword>
-        
-        2. **TALK**: User is chatting, greeting, or asking generic questions.
-           - Examples: "Hello", "こんにちは", "Good morning", "Recommend something", "暇", "疲れた".
-           - UNLESS the user asks to "Search" specifically, treat ambiguous nouns as TALK if they look like conversation.
-           - "こんにちは" (Hello) is ALWAYS TALK. Do NOT search for it.
-           - Output: TALK: <DJ-style response>
+Task: Classify intent and generate response.
 
-        Constraints:
-        - Response must be in the same language as the input.
-        - Keep talk responses concise (max 2 sentences).
-        - Be energetic and friendly!
+Intents:
+1. **SCHEDULE**: User wants to schedule podcast playback at a specific time.
+   - Examples: 
+     - "8時に再生して" (Play at 8 o'clock) 
+     - "明日の朝7時に起こして" (Wake me up tomorrow at 7am)
+     - "毎週月曜8時に再生" (Play every Monday at 8)
+     - "20時にラジオかけて" (Play radio at 20:00)
+     - "今夜9時に再生して" (Play tonight at 9pm)
+   - If no day is specified, assume TODAY if the hour hasn't passed yet, otherwise assume TOMORROW (next occurrence of that hour).
+   - If no specific podcast is mentioned, use keyword "ランダム" (random).
+   - Output JSON: SCHEDULE:{"day_of_week":N,"hour":H,"keyword":"...", "message":"確認メッセージ"}
+   - day_of_week: 0-6 (Sun-Sat)
+   - hour: 0-23
+   - message: A friendly confirmation in user's language
 
-        Output Format: "SEARCH: ..." or "TALK: ..."
-        `;
+2. **SEARCH**: User explicitly wants to find a podcast channel.
+   - Examples: "Find news", "Search for Rebuild", "History podcasts", "Tech", "ニュース番組探して".
+   - Output: SEARCH: <keyword>
+
+3. **TALK**: User is chatting, greeting, or asking generic questions.
+   - Examples: "Hello", "こんにちは", "Good morning", "Recommend something", "暇", "疲れた".
+   - "こんにちは" (Hello) is ALWAYS TALK. Do NOT search or schedule for it.
+   - Output: TALK: <DJ-style response>
+
+Priority: SCHEDULE > SEARCH > TALK
+If the message mentions a time (時, o'clock, am, pm, 朝, 夜, etc.) with playback intent (再生, かけて, 起こして, play), it's SCHEDULE.
+
+Constraints:
+- Response must be in the same language as the input.
+- Keep talk responses concise (max 2 sentences).
+- Be energetic and friendly!
+
+Output Format (one of):
+- "SCHEDULE:{...json...}"
+- "SEARCH: ..."
+- "TALK: ..."
+`;
 
         const result = await model.generateContent(prompt);
-        const response = result.response.text();
+        const response = result.response.text().trim();
+
+        console.log('Gemini Response:', response);
+
+        // Parse SCHEDULE intent
+        if (response.startsWith('SCHEDULE:')) {
+            try {
+                const jsonStr = response.replace('SCHEDULE:', '').trim();
+                const parsed = JSON.parse(jsonStr);
+                return {
+                    type: 'schedule',
+                    dayOfWeek: parsed.day_of_week,
+                    hour: parsed.hour,
+                    keyword: parsed.keyword || 'ランダム',
+                    message: parsed.message || '予約しました！'
+                };
+            } catch (parseErr) {
+                console.error('Failed to parse SCHEDULE JSON:', parseErr, response);
+                return { type: 'talk', content: 'すみません、予約の解析に失敗しました。「月曜8時に再生」のように具体的に教えてください。' };
+            }
+        }
 
         if (response.startsWith('SEARCH:')) {
             return { type: 'search', content: response.replace('SEARCH:', '').trim() };
@@ -768,7 +858,6 @@ async function determineIntentOrChat(text: string): Promise<{ type: 'search' | '
         }
     } catch (e: any) {
         console.error('Gemini Error:', e);
-        // Expose error detail for debugging
         return { type: 'talk', content: `⚠️ System Error: ${e.message || String(e)}` };
     }
 }
