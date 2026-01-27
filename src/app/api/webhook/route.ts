@@ -780,61 +780,34 @@ async function determineIntentOrChat(text: string): Promise<AIIntent> {
         const currentDay = now.getDay(); // 0=Sun, 1=Mon, ...
         const currentHour = now.getHours();
 
-        const prompt = `
-You are a friendly Radio DJ bot ("Random Cast Bot").
-User input: "${text}"
-Current time context: Day ${currentDay} (0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat), Hour ${currentHour}
+        const prompt = `You are a Radio DJ bot. Classify user intent and respond with ONLY the output format specified. No explanations.
 
-Task: Classify intent and generate response.
+User: "${text}"
+Context: Day ${currentDay} (0=Sun-6=Sat), Hour ${currentHour}
 
-Intents:
-1. **SCHEDULE**: User wants to schedule podcast playback at a specific time.
-   - Examples: 
-     - "8時に再生して" (Play at 8 o'clock) 
-     - "明日の朝7時に起こして" (Wake me up tomorrow at 7am)
-     - "毎週月曜8時に再生" (Play every Monday at 8)
-     - "20時にラジオかけて" (Play radio at 20:00)
-     - "今夜9時に再生して" (Play tonight at 9pm)
-   - If no day is specified, assume TODAY if the hour hasn't passed yet, otherwise assume TOMORROW (next occurrence of that hour).
-   - If no specific podcast is mentioned, use keyword "ランダム" (random).
-   - Output JSON: SCHEDULE:{"day_of_week":N,"hour":H,"keyword":"...", "message":"確認メッセージ"}
-   - day_of_week: 0-6 (Sun-Sat)
-   - hour: 0-23
-   - message: A friendly confirmation in user's language
+RULES:
+1. SCHEDULE - User wants to play podcast at specific time (時, o'clock, 朝, 夜, 再生, かけて, play)
+   - "X分後" is NOT supported. Tell them to specify an hour like "8時に再生".
+   - Output: SCHEDULE:{"day_of_week":N,"hour":H,"keyword":"ランダム","message":"確認メッセージ"}
 
-2. **SEARCH**: User explicitly wants to find a podcast channel.
-   - Examples: "Find news", "Search for Rebuild", "History podcasts", "Tech", "ニュース番組探して".
-   - Output: SEARCH: <keyword>
+2. SEARCH - User wants to find podcast (検索, 探して, find, search + keyword)
+   - Output: SEARCH:keyword
 
-3. **TALK**: User is chatting, greeting, or asking generic questions.
-   - Examples: "Hello", "こんにちは", "Good morning", "Recommend something", "暇", "疲れた".
-   - "こんにちは" (Hello) is ALWAYS TALK. Do NOT search or schedule for it.
-   - Output: TALK: <DJ-style response>
+3. TALK - Greeting or chat (こんにちは, hello, おすすめ, 暇)
+   - Output: TALK:response
 
-Priority: SCHEDULE > SEARCH > TALK
-If the message mentions a time (時, o'clock, am, pm, 朝, 夜, etc.) with playback intent (再生, かけて, 起こして, play), it's SCHEDULE.
-
-Constraints:
-- Response must be in the same language as the input.
-- Keep talk responses concise (max 2 sentences).
-- Be energetic and friendly!
-
-Output Format (one of):
-- "SCHEDULE:{...json...}"
-- "SEARCH: ..."
-- "TALK: ..."
-`;
+OUTPUT ONLY ONE LINE. NO EXPLANATIONS. NO MARKDOWN.`;
 
         const result = await model.generateContent(prompt);
         const response = result.response.text().trim();
 
         console.log('Gemini Response:', response);
 
-        // Parse SCHEDULE intent
-        if (response.startsWith('SCHEDULE:')) {
+        // Parse SCHEDULE intent - handle various formats
+        const scheduleMatch = response.match(/SCHEDULE:\s*(\{[\s\S]*?\})/);
+        if (scheduleMatch) {
             try {
-                const jsonStr = response.replace('SCHEDULE:', '').trim();
-                const parsed = JSON.parse(jsonStr);
+                const parsed = JSON.parse(scheduleMatch[1]);
                 return {
                     type: 'schedule',
                     dayOfWeek: parsed.day_of_week,
@@ -844,18 +817,24 @@ Output Format (one of):
                 };
             } catch (parseErr) {
                 console.error('Failed to parse SCHEDULE JSON:', parseErr, response);
-                return { type: 'talk', content: 'すみません、予約の解析に失敗しました。「月曜8時に再生」のように具体的に教えてください。' };
+                return { type: 'talk', content: '予約は「8時に再生」のように時刻で指定してください。' };
             }
         }
 
-        if (response.startsWith('SEARCH:')) {
-            return { type: 'search', content: response.replace('SEARCH:', '').trim() };
-        } else if (response.startsWith('TALK:')) {
-            return { type: 'talk', content: response.replace('TALK:', '').trim() };
-        } else {
-            // Fallback: treat as talk
-            return { type: 'talk', content: response };
+        // Parse SEARCH intent
+        const searchMatch = response.match(/SEARCH:\s*(.+)/);
+        if (searchMatch) {
+            return { type: 'search', content: searchMatch[1].trim() };
         }
+
+        // Parse TALK intent
+        const talkMatch = response.match(/TALK:\s*(.+)/);
+        if (talkMatch) {
+            return { type: 'talk', content: talkMatch[1].trim() };
+        }
+
+        // Fallback
+        return { type: 'talk', content: response };
     } catch (e: any) {
         console.error('Gemini Error:', e);
         return { type: 'talk', content: `⚠️ System Error: ${e.message || String(e)}` };
