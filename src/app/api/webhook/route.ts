@@ -438,7 +438,7 @@ export async function POST(req: NextRequest) {
                                 return;
                             }
 
-                            const { dayOfWeek, hour, keyword, message } = intent;
+                            const { dayOfWeek, hour, minute, keyword, message } = intent;
                             const { error } = await supabase
                                 .from('schedules')
                                 .insert({
@@ -446,7 +446,7 @@ export async function POST(req: NextRequest) {
                                     keyword: keyword,
                                     day_of_week: dayOfWeek,
                                     hour: hour,
-                                    minute: 0,
+                                    minute: minute,
                                     is_active: true
                                 });
 
@@ -458,11 +458,12 @@ export async function POST(req: NextRequest) {
                                 });
                             } else {
                                 const days = ['日', '月', '火', '水', '木', '金', '土'];
+                                const timeStr = `${hour}:${String(minute).padStart(2, '0')}`;
                                 await client.replyMessage({
                                     replyToken: event.replyToken,
                                     messages: [{
                                         type: 'text',
-                                        text: `${message}\n\n📻 番組: ${keyword}\n🗓 時間: ${days[dayOfWeek]}曜日 ${hour}:00`
+                                        text: `${message}\n\n📻 番組: ${keyword}\n🗓 時間: ${days[dayOfWeek]}曜日 ${timeStr}`
                                     }],
                                 });
                             }
@@ -762,7 +763,7 @@ function parseScheduleMessage(text: string): { dayOfWeek: number, hour: number, 
 type AIIntent =
     | { type: 'search', content: string }
     | { type: 'talk', content: string }
-    | { type: 'schedule', dayOfWeek: number, hour: number, keyword: string, message: string };
+    | { type: 'schedule', dayOfWeek: number, hour: number, minute: number, keyword: string, message: string };
 
 // AI Helper - Now supports SCHEDULE intent
 async function determineIntentOrChat(text: string): Promise<AIIntent> {
@@ -775,28 +776,36 @@ async function determineIntentOrChat(text: string): Promise<AIIntent> {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-        // Get current day for context
+        // Get current time in JST (UTC+9)
         const now = new Date();
-        const currentDay = now.getDay(); // 0=Sun, 1=Mon, ...
-        const currentHour = now.getHours();
+        const jstOffset = 9 * 60; // JST is UTC+9
+        const jstTime = new Date(now.getTime() + (jstOffset + now.getTimezoneOffset()) * 60000);
+        const currentDay = jstTime.getDay(); // 0=Sun, 1=Mon, ...
+        const currentHour = jstTime.getHours();
+        const currentMinute = jstTime.getMinutes();
+        const currentDate = jstTime.getDate();
+        const currentMonth = jstTime.getMonth() + 1;
 
-        const prompt = `You are a Radio DJ bot. Classify user intent and respond with ONLY the output format specified. No explanations.
+        const prompt = `You are a Radio DJ bot. Classify and respond with ONLY the format. No explanations.
 
 User: "${text}"
-Context: Day ${currentDay} (0=Sun-6=Sat), Hour ${currentHour}
+Now: ${currentMonth}/${currentDate} (day_of_week=${currentDay}, 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat), ${currentHour}:${String(currentMinute).padStart(2, '0')} JST
 
 RULES:
-1. SCHEDULE - User wants to play podcast at specific time (時, o'clock, 朝, 夜, 再生, かけて, play)
-   - "X分後" is NOT supported. Tell them to specify an hour like "8時に再生".
-   - Output: SCHEDULE:{"day_of_week":N,"hour":H,"keyword":"ランダム","message":"確認メッセージ"}
+1. SCHEDULE - Time-based playback request (X時Y分, X:Y, 朝, 夜, 再生, かけて)
+   - Calculate correct day_of_week from date if given (e.g., "1/27" → check what day it is)
+   - Support minutes: "12時45分" → hour=12, minute=45
+   - If only hour given, minute=0
+   - If time already passed today, use tomorrow
+   - Output: SCHEDULE:{"day_of_week":N,"hour":H,"minute":M,"keyword":"ランダム","message":"確認"}
 
-2. SEARCH - User wants to find podcast (検索, 探して, find, search + keyword)
+2. SEARCH - Find podcast (検索, 探して, find + keyword)
    - Output: SEARCH:keyword
 
-3. TALK - Greeting or chat (こんにちは, hello, おすすめ, 暇)
+3. TALK - Chat/greeting
    - Output: TALK:response
 
-OUTPUT ONLY ONE LINE. NO EXPLANATIONS. NO MARKDOWN.`;
+ONE LINE ONLY. NO MARKDOWN.`;
 
         const result = await model.generateContent(prompt);
         const response = result.response.text().trim();
@@ -812,6 +821,7 @@ OUTPUT ONLY ONE LINE. NO EXPLANATIONS. NO MARKDOWN.`;
                     type: 'schedule',
                     dayOfWeek: parsed.day_of_week,
                     hour: parsed.hour,
+                    minute: parsed.minute || 0,
                     keyword: parsed.keyword || 'ランダム',
                     message: parsed.message || '予約しました！'
                 };
