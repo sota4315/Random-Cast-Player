@@ -385,7 +385,27 @@ export async function POST(req: NextRequest) {
                         await handleDeleteSchedule(client, event.replyToken, lineUserId, scheduleId);
                     }
                 }
-                // 8. Schedule / Search Fallback
+                // 8. Time Check Command (Debug)
+                else if (text.match(/^(今何時|時間|time|今日は何曜日)$/i)) {
+                    const now = new Date();
+                    const jstOffset = 9 * 60;
+                    const jstTime = new Date(now.getTime() + (jstOffset + now.getTimezoneOffset()) * 60000);
+                    const dayNames = ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'];
+                    const month = jstTime.getMonth() + 1;
+                    const date = jstTime.getDate();
+                    const day = jstTime.getDay();
+                    const hour = jstTime.getHours();
+                    const minute = String(jstTime.getMinutes()).padStart(2, '0');
+
+                    await client.replyMessage({
+                        replyToken: event.replyToken,
+                        messages: [{
+                            type: 'text',
+                            text: `🕐 現在時刻 (JST)\n\n📅 ${month}/${date} ${dayNames[day]}\n⏰ ${hour}:${minute}\n\n(day_of_week = ${day})`
+                        }],
+                    });
+                }
+                // 9. Schedule / Search Fallback
                 else {
                     const scheduleData = parseScheduleMessage(text);
                     if (scheduleData) {
