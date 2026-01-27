@@ -385,7 +385,48 @@ export async function POST(req: NextRequest) {
                         await handleDeleteSchedule(client, event.replyToken, lineUserId, scheduleId);
                     }
                 }
-                // 8. Time Check Command (Debug)
+                // 8. Test Play Command - Immediately open web app with autoplay
+                else if (text.match(/^(テスト|test|再生|play)$/i)) {
+                    const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+                    const baseUrl = liffId
+                        ? `https://liff.line.me/${liffId}`
+                        : 'https://random-cast-player.vercel.app';
+                    const playUrl = `${baseUrl}?autoplay=true`;
+
+                    await client.replyMessage({
+                        replyToken: event.replyToken,
+                        messages: [{
+                            type: 'flex',
+                            altText: '🎧 再生テスト',
+                            contents: {
+                                type: 'bubble',
+                                body: {
+                                    type: 'box',
+                                    layout: 'vertical',
+                                    contents: [
+                                        { type: 'text', text: '🎧 再生テスト', weight: 'bold', size: 'lg' },
+                                        { type: 'text', text: 'ボタンを押すとランダムにポッドキャストが再生されます', size: 'sm', color: '#666666', wrap: true, margin: 'md' }
+                                    ]
+                                },
+                                footer: {
+                                    type: 'box',
+                                    layout: 'vertical',
+                                    contents: [{
+                                        type: 'button',
+                                        style: 'primary',
+                                        color: '#1DB446',
+                                        action: {
+                                            type: 'uri',
+                                            label: '▶️ 今すぐ再生',
+                                            uri: playUrl
+                                        }
+                                    }]
+                                }
+                            }
+                        }],
+                    });
+                }
+                // 9. Time Check Command (Debug)
                 else if (text.match(/^(今何時|時間|time|今日は何曜日)$/i)) {
                     const now = new Date();
                     const jstOffset = 9 * 60;
