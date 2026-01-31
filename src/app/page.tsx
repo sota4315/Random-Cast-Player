@@ -363,7 +363,7 @@ export default function Home() {
 
     const startRadio = async () => {
         if (rssList.length === 0) {
-            setErrorMessage('No channels configured. Please add RSS feeds in settings.');
+            setErrorMessage('チャンネルが登録されていません。設定から番組を追加してください。');
             setPlayerState('error');
             setIsSettingsOpen(true); // Auto open settings
             return;
@@ -375,16 +375,20 @@ export default function Home() {
         try {
             // 1. Pick a random RSS
             const randomRss = rssList[Math.floor(Math.random() * rssList.length)];
+            console.log('Fetching RSS:', randomRss.url);
 
             // 2. Fetch via our API route
             const res = await fetch(`/api/rss?url=${encodeURIComponent(randomRss.url)}`);
-            if (!res.ok) throw new Error('Failed to fetch RSS feed');
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(`RSSの取得に失敗しました (${res.status}): ${errorData.error || randomRss.url}`);
+            }
 
             const feed = await res.json();
             const items = feed.items as any[];
 
             if (!items || items.length === 0) {
-                throw new Error('No episodes found in feed');
+                throw new Error('このフィードにはエピソードがありません。別のチャンネルを試してください。');
             }
 
             // 3. Filter last 1 year
@@ -408,7 +412,7 @@ export default function Home() {
             const randomEpisode = targetList[Math.floor(Math.random() * targetList.length)];
 
             if (!randomEpisode.enclosure?.url) {
-                throw new Error('Episode audio source not found. Please try again.');
+                throw new Error('音声ファイルが見つかりません。もう一度お試しください。');
             }
 
             setCurrentEpisode({
@@ -427,9 +431,9 @@ export default function Home() {
             }
 
         } catch (error: any) {
-            console.error(error);
+            console.error('Radio Error:', error);
             setPlayerState('error');
-            setErrorMessage(error.message || 'Something went wrong');
+            setErrorMessage(error.message || '再生に失敗しました');
         }
     };
 
